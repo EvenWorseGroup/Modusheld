@@ -54,6 +54,36 @@ docker compose -f infra/docker-compose.yml --env-file .env down
 
 El host publica unicamente `localhost:8080`. `demo-api:8081` existe solo en `back-network`; si `localhost:8081` responde, el aislamiento esta mal configurado.
 
+## Pipeline CI/CD y entorno de prueba
+
+El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) se ejecuta en
+cada pull request, en cada push a `main` y tambien se puede iniciar manualmente.
+Usa un runner Ubuntu hospedado por GitHub como entorno de prueba aislado y
+efimero. No requiere un servidor externo, un GitHub Environment ni secretos
+configurados en el repositorio.
+
+Las etapas logicas se ejecutan en este orden:
+
+1. **Pruebas:** JUnit 5 y el gate JaCoCo de 80 % por modulo.
+2. **Construccion:** empaquetado Maven y construccion de las imagenes Docker.
+3. **Despliegue de prueba:** `docker compose up` inicia gateway y demo-api en el
+   runner aislado.
+4. **Verificacion:** espera `/health` y ejecuta E01-E12 mediante
+   `client-tests/run_demo.py`.
+5. **Evidencia y limpieza:** publica los reportes JaCoCo y el JSON E2E como
+   artefactos; despues ejecuta `docker compose down` incluso si falla una prueba.
+
+El endpoint `http://localhost:8080` existe solamente durante la ejecucion del
+workflow. La evidencia demostrable es la ejecucion exitosa en GitHub Actions,
+su resumen y los artefactos `jacoco-reports-*` y `e2e-evidence-*`. El entorno se
+elimina intencionalmente al terminar para que cada ejecucion sea reproducible e
+independiente.
+
+Para probar el pipeline desde GitHub, abre **Actions**, selecciona
+**CI and test deployment**, elige **Run workflow** sobre `main` y espera que el
+job **Test, build, and deploy isolated environment** finalice en verde. Tambien
+se ejecutara automaticamente con el siguiente push a `main`.
+
 ## Autenticacion y productos
 
 Registro y login se realizan en el gateway. Los usuarios registrados reciben el
