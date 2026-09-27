@@ -64,9 +64,11 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
-En Windows, Docker Desktop junto con Git Bash o WSL permite ejecutar los
-comandos Bash sin cambios. Para Maven también puedes usar `mvnw.cmd` desde
-PowerShell.
+En Windows 11 instala Docker Desktop y Python 3 marcando la opción para agregar
+Python a `PATH`. Puedes seguir los comandos Bash con Git Bash o WSL. Si
+prefieres PowerShell, utiliza los equivalentes nativos incluidos más adelante;
+no dependas del alias `curl` de Windows PowerShell, porque no siempre se
+comporta como `curl` real. Para Maven utiliza `mvnw.cmd`.
 
 Verifica que Docker esté iniciado:
 
@@ -103,12 +105,28 @@ En PowerShell:
 Copy-Item .env.example .env
 ```
 
-Genera valores privados localmente:
+En macOS, Linux, Git Bash o WSL, genera valores privados localmente:
 
 ```bash
 openssl rand -hex 32   # MODUSHIELD_API_KEY
 openssl rand -hex 48   # JWT_SECRET
 openssl rand -hex 24   # ADMIN_PASSWORD
+```
+
+En Windows 11 con PowerShell, genera la misma clase de valores con el generador
+criptográfico del sistema, sin instalar OpenSSL:
+
+```powershell
+function New-HexSecret([int]$Bytes) {
+    $buffer = New-Object byte[] $Bytes
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($buffer) } finally { $rng.Dispose() }
+    return -join ($buffer | ForEach-Object { $_.ToString("x2") })
+}
+
+New-HexSecret 32  # MODUSHIELD_API_KEY
+New-HexSecret 48  # JWT_SECRET
+New-HexSecret 24  # ADMIN_PASSWORD
 ```
 
 Edita `.env` y sustituye todos los placeholders:
@@ -147,6 +165,10 @@ git check-ignore -v .env
 
 Nunca subas `.env` ni incluyas sus valores en capturas, issues, comentarios o
 archivos del workflow.
+
+Si un secreto se publica accidentalmente en un chat, captura o commit, trátalo
+como comprometido aunque después se borre: genera otro valor, actualiza `.env`
+y recrea el gateway. Un secreto JWT nuevo invalida todos los tokens anteriores.
 
 ## 5. Iniciar la aplicación con Docker Compose
 
@@ -188,14 +210,14 @@ aislamiento de red se ha roto.
 Genera una contraseña de demostración en vez de reutilizar una personal:
 
 ```bash
-export USERNAME="demo-user"
+export DEMO_USERNAME="demo-user"
 export USER_PASSWORD="$(openssl rand -hex 16)"
 ```
 
 ```bash
 curl -i -X POST http://localhost:8080/auth/register \
   -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${USERNAME}\",\"password\":\"${USER_PASSWORD}\"}"
+  -d "{\"username\":\"${DEMO_USERNAME}\",\"password\":\"${USER_PASSWORD}\"}"
 ```
 
 Resultado esperado: HTTP `201`:
@@ -216,7 +238,7 @@ Guarda la respuesta y extrae el token sin imprimirlo:
 USER_LOGIN_RESPONSE="$(curl --fail --silent --show-error \
   -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${USERNAME}\",\"password\":\"${USER_PASSWORD}\"}")"
+  -d "{\"username\":\"${DEMO_USERNAME}\",\"password\":\"${USER_PASSWORD}\"}")"
 
 export USER_TOKEN="$(printf '%s' "$USER_LOGIN_RESPONSE" | \
   python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
@@ -284,7 +306,7 @@ Resultado esperado: HTTP `401 INVALID_TOKEN`.
 ```bash
 curl -i -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${USERNAME}\",\"password\":\"wrong-password\"}"
+  -d "{\"username\":\"${DEMO_USERNAME}\",\"password\":\"wrong-password\"}"
 ```
 
 Resultado esperado: HTTP `401 INVALID_CREDENTIALS`.
@@ -348,6 +370,22 @@ set -a
 set +a
 ```
 
+Comprueba que las dos credenciales fueron cargadas sin mostrar sus valores:
+
+```bash
+test -n "$ADMIN_USERNAME" && echo "ADMIN_USERNAME cargado" || echo "Falta ADMIN_USERNAME"
+test -n "$ADMIN_PASSWORD" && echo "ADMIN_PASSWORD cargado" || echo "Falta ADMIN_PASSWORD"
+```
+
+Si falta alguna, no continúes hasta corregir o volver a cargar `.env`. El
+gateway utiliza los valores que existían cuando se creó el contenedor. Si
+modificaste las credenciales en `.env` después de iniciarlo, recréalo antes del
+login:
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env up -d --force-recreate gateway
+```
+
 Obtén el JWT administrativo:
 
 ```bash
@@ -360,7 +398,16 @@ export ADMIN_TOKEN="$(printf '%s' "$ADMIN_LOGIN_RESPONSE" | \
   python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
 ```
 
-La respuesta debe indicar `"role":"ADMIN"`.
+La respuesta debe indicar `"role":"ADMIN"`. Confirma que se obtuvo un token
+sin imprimirlo:
+
+```bash
+test -n "$ADMIN_TOKEN" && echo "ADMIN_TOKEN obtenido" || echo "Falta ADMIN_TOKEN"
+```
+
+Si el primer comando `curl` muestra el error 22/HTTP 401, el login falló y no
+se debe intentar el CRUD: revisa que las variables estén cargadas y que sean
+las mismas con las que arrancó el gateway.
 
 ## 12. Demostrar CRUD completo de `ADMIN`
 
@@ -411,6 +458,93 @@ La eliminación devuelve HTTP `204`; la consulta posterior devuelve `404`.
 El límite es cinco solicitudes por usuario dentro de diez segundos. Si recibes
 HTTP `429`, espera 11 segundos antes de repetir la operación.
 
+### Equivalentes para Windows 11 con PowerShell
+
+Los comandos `docker compose` son iguales en PowerShell. Para las pruebas HTTP,
+este recorrido evita problemas de comillas y del alias `curl`:
+
+```powershell
+$DemoUsername = "demo-user"
+$DemoPassword = New-HexSecret 16
+$JsonHeaders = @{ "Content-Type" = "application/json" }
+
+$RegistrationBody = @{
+    username = $DemoUsername
+    password = $DemoPassword
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod -Method Post `
+    -Uri "http://localhost:8080/auth/register" `
+    -Headers $JsonHeaders `
+    -Body $RegistrationBody
+
+$UserLogin = Invoke-RestMethod -Method Post `
+    -Uri "http://localhost:8080/auth/login" `
+    -Headers $JsonHeaders `
+    -Body $RegistrationBody
+$UserToken = $UserLogin.token
+
+$UserHeaders = @{ Authorization = "Bearer $UserToken" }
+Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Headers $UserHeaders
+```
+
+Lee únicamente las variables ADMIN requeridas desde `.env`. Esta función trata
+el archivo como datos; no ejecuta sus líneas como código:
+
+```powershell
+function Get-DotEnvValue([string]$Name) {
+    $prefix = "$Name="
+    $line = Get-Content .env |
+        Where-Object { $_.StartsWith($prefix) } |
+        Select-Object -First 1
+    if (-not $line) { throw "Falta $Name en .env" }
+    return $line.Substring($prefix.Length)
+}
+
+$AdminUsername = Get-DotEnvValue "ADMIN_USERNAME"
+$AdminPassword = Get-DotEnvValue "ADMIN_PASSWORD"
+$AdminBody = @{
+    username = $AdminUsername
+    password = $AdminPassword
+} | ConvertTo-Json -Compress
+
+$AdminLogin = Invoke-RestMethod -Method Post `
+    -Uri "http://localhost:8080/auth/login" `
+    -Headers $JsonHeaders `
+    -Body $AdminBody
+$AdminToken = $AdminLogin.token
+if ([string]::IsNullOrWhiteSpace($AdminToken)) { throw "No se obtuvo ADMIN_TOKEN" }
+
+$AdminHeaders = @{
+    Authorization = "Bearer $AdminToken"
+    "Content-Type" = "application/json"
+}
+
+$Product = @{ id = "P-GUIDE"; name = "Guide product"; stock = 3 } |
+    ConvertTo-Json -Compress
+Invoke-RestMethod -Method Post `
+    -Uri "http://localhost:8080/api/products" `
+    -Headers $AdminHeaders -Body $Product
+
+Invoke-RestMethod `
+    -Uri "http://localhost:8080/api/products/P-GUIDE" `
+    -Headers $AdminHeaders
+
+$UpdatedProduct = @{ id = "P-GUIDE"; name = "Updated guide product"; stock = 9 } |
+    ConvertTo-Json -Compress
+Invoke-RestMethod -Method Put `
+    -Uri "http://localhost:8080/api/products/P-GUIDE" `
+    -Headers $AdminHeaders -Body $UpdatedProduct
+
+Invoke-RestMethod -Method Delete `
+    -Uri "http://localhost:8080/api/products/P-GUIDE" `
+    -Headers $AdminHeaders
+```
+
+Para observar directamente respuestas esperadas como `401` o `403`, utiliza
+`curl.exe` (con `.exe`) en PowerShell. `Invoke-RestMethod` convierte respuestas
+HTTP de error en excepciones, aunque el servidor esté funcionando correctamente.
+
 ## 13. Maven, JUnit 5 y JaCoCo
 
 El `pom.xml` padre configura JaCoCo por módulo. La fase `test` compila, ejecuta
@@ -458,6 +592,20 @@ awk -F, 'NR > 1 { missed += $8; covered += $9 } END { printf "gateway-service: %
 awk -F, 'NR > 1 { missed += $8; covered += $9 } END { printf "demo-api: %.2f%%\n", 100 * covered / (covered + missed) }' demo-api/target/site/jacoco/jacoco.csv
 ```
 
+Equivalente PowerShell:
+
+```powershell
+function Get-LineCoverage([string]$CsvPath) {
+    $rows = Import-Csv $CsvPath
+    $missed = ($rows | Measure-Object -Property LINE_MISSED -Sum).Sum
+    $covered = ($rows | Measure-Object -Property LINE_COVERED -Sum).Sum
+    return "{0:N2}%" -f (100 * $covered / ($covered + $missed))
+}
+
+"gateway-service: $(Get-LineCoverage 'gateway-service/target/site/jacoco/jacoco.csv')"
+"demo-api: $(Get-LineCoverage 'demo-api/target/site/jacoco/jacoco.csv')"
+```
+
 No uses `-DskipTests` para verificar cobertura. Si Mockito no puede inicializar
 Byte Buddy o adjuntar su agente, confirma que `JAVA_HOME` y `./mvnw -version`
 utilicen Temurin 17. `Coverage checks have not been met` es un fallo real del
@@ -498,6 +646,14 @@ Asegúrate de que ambos servicios estén activos:
 ```bash
 docker compose -f infra/docker-compose.yml --env-file .env up -d --build
 python3 client-tests/run_demo.py
+```
+
+En Windows PowerShell, si el instalador expone el launcher `py` en vez de
+`python3`:
+
+```powershell
+docker compose -f infra/docker-compose.yml --env-file .env up -d --build
+py -3 client-tests/run_demo.py
 ```
 
 El runner lee `.env`, inicia sesión como ADMIN, crea un `USER` temporal y prueba:
@@ -569,9 +725,16 @@ El segundo comando no debe mostrar contenedores activos del proyecto.
 Elimina secretos de la terminal:
 
 ```bash
-unset USER_PASSWORD USER_LOGIN_RESPONSE USER_TOKEN
+unset DEMO_USERNAME USER_PASSWORD USER_LOGIN_RESPONSE USER_TOKEN
 unset ADMIN_LOGIN_RESPONSE ADMIN_TOKEN
 unset MODUSHIELD_API_KEY JWT_SECRET ADMIN_USERNAME ADMIN_PASSWORD
+```
+
+En PowerShell, elimina las variables y tokens de la sesión:
+
+```powershell
+Remove-Variable DemoUsername, DemoPassword, UserLogin, UserToken -ErrorAction SilentlyContinue
+Remove-Variable AdminUsername, AdminPassword, AdminLogin, AdminToken -ErrorAction SilentlyContinue
 ```
 
 Conserva `.env` solamente en un equipo confiable. Puede recrearse desde
