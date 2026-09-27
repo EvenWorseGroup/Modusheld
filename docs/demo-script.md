@@ -1,39 +1,117 @@
-# Guion de demostracion
+# Guion actualizado de demostración
 
-Las aserciones y los contratos completos de entrada/salida estan definidos en
-[presentation-contracts.md](presentation-contracts.md).
+Este guion usa los contratos de [presentation-contracts.md](presentation-contracts.md)
+y la configuración completa del [README principal](../README.md).
 
-## Preparacion
+## 1. Preparación previa
+
+No muestres `.env` ni imprimas JWT, API keys o contraseñas durante la
+presentación.
+
+macOS/Linux/Git Bash/WSL:
 
 ```bash
-git status --short
-git describe --tags --always
-cp .env.example .env          # solo si aun no existe
-./mvnw clean test
+git status --short --branch
+git rev-parse --short HEAD
+java -version
+./mvnw -version
+./mvnw --batch-mode --no-transfer-progress clean test
 docker compose -f infra/docker-compose.yml --env-file .env up -d --build
 docker compose -f infra/docker-compose.yml --env-file .env ps
 ```
 
-Antes de presentar, comprobar que `demo-api` no muestra un puerto del host y que el gateway esta unido a `front-network` y `back-network`.
+Windows PowerShell:
 
-## Recorrido
+```powershell
+git status --short --branch
+git rev-parse --short HEAD
+java -version
+.\mvnw.cmd -version
+.\mvnw.cmd --batch-mode --no-transfer-progress clean test
+docker compose -f infra/docker-compose.yml --env-file .env up -d --build
+docker compose -f infra/docker-compose.yml --env-file .env ps
+```
 
-1. Mostrar la topologia y explicar que el backend solo existe en la red interna.
-2. Ejecutar la matriz completa:
+Confirma antes de presentar:
 
-   ```bash
-   python client-tests/run_demo.py       #python3 client-tests/run_demo.py para MacOS
-   ```
+- Java y Maven Wrapper usan Java 17.
+- Los dos módulos superan el gate JaCoCo de 80%.
+- `gateway` publica 8080.
+- `demo-api` muestra solamente `8081/tcp`, sin binding del host.
+- `curl http://localhost:8080/health` responde 200.
+- `localhost:8081` no responde.
 
-3. Destacar E02 (proxy 200), E03 (401), E05 (403), E06 (405), E07 (429), E09 (413), E10 (502), E11 (aislamiento) y E12 (auditoria sin secreto).
-4. Mostrar el resumen `12 passed, 0 failed, 0 skipped` y el archivo generado en `docs/evidence/`.
-5. Mostrar una linea de auditoria permitida y una rechazada, ambas correlacionadas por request ID.
+## 2. Demostración manual de JWT y roles
 
-## Cierre
+El recorrido detallado y seguro está en el README. Para una presentación corta:
+
+1. Registrar un usuario y mostrar que recibe `role=USER`.
+2. Iniciar sesión sin imprimir el token.
+3. Mostrar GET de productos con USER → 200.
+4. Mostrar POST de producto con USER → 403
+   `INSUFFICIENT_PERMISSIONS`.
+5. Iniciar sesión con el ADMIN configurado sin mostrar credenciales/token.
+6. Crear, consultar, actualizar y eliminar un producto → 201, 200, 200 y 204.
+7. Consultar el producto eliminado → 404.
+8. Mostrar productos sin JWT → 401 `INVALID_TOKEN`.
+
+Si se recibió 429 durante ensayos, espera 11 segundos antes de repetir una
+secuencia con el mismo usuario.
+
+## 3. Demostración automatizada E01–E12
+
+macOS/Linux/Git Bash/WSL:
+
+```bash
+python3 client-tests/run_demo.py
+```
+
+Windows PowerShell:
+
+```powershell
+py -3 client-tests/run_demo.py
+```
+
+Destaca:
+
+- E02: login ADMIN y proxy autenticado con JWT, 200.
+- E03/E04: JWT ausente o inválido, 401.
+- E05: ruta bloqueada, 403.
+- E06: escritura de USER, 403.
+- E07: rate limit, 429 en la sexta solicitud.
+- E09: 8193 bytes, 413.
+- E10: backend detenido, 502 y recuperación.
+- E11: aislamiento de red.
+- E12: request ID auditado y JWT ausente del log.
+
+El cierre correcto es:
+
+```text
+Summary: 12 passed, 0 failed, 0 skipped
+```
+
+Muestra el archivo nuevo de `docs/evidence/`, verificando que no contiene
+secretos. Una revisión terminada en `-dirty` significa que había cambios sin
+commit al ejecutar.
+
+## 4. Evidencia de CI/CD
+
+En GitHub Actions abre **CI and test deployment** y muestra:
+
+1. JUnit 5 y gate JaCoCo exitosos.
+2. Porcentaje ≥80% en cada módulo.
+3. Empaquetado Maven e imágenes Docker exitosos.
+4. Despliegue Compose y readiness exitosos.
+5. E01–E12 exitosos.
+6. Artefactos `jacoco-reports-<run id>` y `e2e-evidence-<run id>`.
+7. Paso de teardown ejecutado.
+
+## 5. Cierre y limpieza
 
 ```bash
 docker compose -f infra/docker-compose.yml --env-file .env logs --no-color gateway
-docker compose -f infra/docker-compose.yml --env-file .env down
+docker compose -f infra/docker-compose.yml --env-file .env down --volumes --remove-orphans
 ```
 
-No improvisar cambios durante la exposicion. Si Docker no esta disponible, usar procesos locales y declarar que E10-E12 quedan sin validar; nunca mostrar escenarios omitidos como aprobados.
+No presentes `--http-only` como una corrida completa: E10–E12 quedan omitidos.
+Si Docker no está disponible, declara explícitamente qué no pudo verificarse.

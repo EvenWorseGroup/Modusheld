@@ -1,53 +1,121 @@
-# Estado y reglas de integracion
+# Estado actual de integración
 
-## Lo integrado
+## Componentes integrados
 
-- La entrega A fue trasladada desde su carpeta separada al paquete comun `com.modushield.gateway`.
-- La entrega B conserva sus clases y pruebas de acceso.
-- La entrega D aporta `demo-api` y la auditoria reactiva del gateway.
-- El contrato `ErrorResponseWriter` de B tiene una implementacion unica, `JsonErrorResponseWriter`, compatible con `PolicyDecision`.
-- El POM raiz fija Java 17, Spring Boot 3.4.5 y Spring Cloud 2024.0.1.
-- Las politicas de C estan integradas como filtros con orden 50 para tamano y 60 para tasa.
-- Infraestructura y E2E fueron validados con Docker; pasan los 12 escenarios obligatorios.
+El proyecto actual integra en el reactor Maven:
 
-## Ajustes hechos al integrar A
+- Java 17, Spring Boot 3.4.5 y Spring Cloud 2024.0.1.
+- Gateway reactivo con routing `/api/**` hacia `demo-api`.
+- Request ID, JSON uniforme de errores y manejo 500/502.
+- Registro, login, BCrypt, JWT y roles `USER`/`ADMIN`.
+- API key heredada para órdenes.
+- Allowlist de rutas y métodos.
+- Límite de 8192 bytes y rate limit 5/10 s.
+- Auditoría reactiva sanitizada.
+- CRUD de productos y órdenes simuladas.
+- Dockerfiles multietapa y Compose con aislamiento de red.
+- JUnit 5 y JaCoCo con mínimo 80% por módulo.
+- Runner E2E E01–E12 y evidencia JSON.
+- GitHub Actions con prueba, construcción, despliegue temporal, E2E, artefactos
+  y limpieza incondicional.
 
-- Se elimino el texto invalido que aparecia despues del XML del POM original.
-- Se unificaron los paquetes `modushield.*` y `com.modushield.gateway.*`.
-- `DEMO_API_URL` sustituyo a `http://localhost:8081` fijo.
-- Se retiro `StripPrefix=1`; el backend recibe las rutas `/api/**` acordadas.
-- El campo publico `code` se cambio por `error` y se agrego `path` al JSON.
-- Los errores imprevistos se convierten a `500 INTERNAL_GATEWAY_ERROR` sin filtrar detalles.
-
-La carpeta original de A no fue modificada y `target/` no se copio.
-
-## Integracion de C
-
-C quedo integrada bajo:
+## Módulos canónicos
 
 ```text
-gateway-service/src/main/java/com/modushield/gateway/policy/limits/
-gateway-service/src/test/java/com/modushield/gateway/policy/limits/
+gateway-service/src/main/java/com/modushield/gateway/
+gateway-service/src/test/java/com/modushield/gateway/
+demo-api/src/main/java/com/modushield/demo/
+demo-api/src/test/java/com/modushield/demo/
 ```
 
-Ambas politicas implementan `GatewayPolicy`, `GlobalFilter` y `Ordered`. Usan el
-`ErrorResponseWriter` y `PolicyDecision` compartidos, propiedades con prefijo
-`modushield.limits`, orden 50 para tamano, orden 60 para tasa y pruebas
-deterministas para 8192/8193 bytes y solicitudes 1-6.
+La carpeta `C/` es material histórico de staging. No es un módulo del reactor,
+no se empaqueta y no debe usarse como fuente del comportamiento actual.
 
-## Ajustes hechos al integrar D
+## Decisiones de integración vigentes
 
-- Se alineo Spring Boot 3.3.5 con la version comun 3.4.5 del reactor.
-- Se retiro `DemoApiKeyFilter`: la autenticacion pertenece al gateway y la clave fija de la entrega no coincidia con la configuracion compartida.
-- `/api/admin/status` devuelve 200 dentro de la red privada; el gateway demuestra el bloqueo devolviendo 403 antes de reenviar.
-- El filtro servlet de auditoria se sustituyo por un `GlobalFilter` reactivo en `gateway-service` con orden -90.
-- La auditoria envuelve errores y politicas, registra ALLOW/DENY/ERROR y no incluye la API key ni el cuerpo.
-- Los endpoints conservan el prefijo `/api` y `demo-api` no publica un puerto al host.
+- `DEMO_API_URL` sustituye cualquier URL fija de localhost entre servicios.
+- No se usa `StripPrefix`; `demo-api` recibe rutas `/api/**` completas.
+- `JsonErrorResponseWriter` implementa el contrato compartido de errores.
+- La autenticación se concentra en el gateway; el backend privado no la duplica.
+- Productos migraron de API key a JWT; únicamente órdenes conservan API key.
+- `/api/admin/status` devuelve 200 dentro de la red privada, pero 403 desde el
+  gateway.
+- La auditoría es un `GlobalFilter`, no un filtro servlet.
+- `demo-api` no publica el puerto 8081 al host.
+- Los usuarios y productos son en memoria; el objetivo es una demostración
+  reproducible, no persistencia productiva.
 
-## Revision de cada entrega
+## Calidad y cobertura
 
-1. Confirmar que solo toca sus paquetes y pruebas.
-2. Leer pruebas y contrato antes de la implementacion.
-3. Ejecutar `./mvnw clean test` y una prueba negativa adicional.
-4. Buscar `.env`, secretos, `target/`, logs y binarios.
-5. Integrar una pieza y repetir la regresion antes de la siguiente.
+El `pom.xml` raíz configura `jacoco-maven-plugin` 0.8.13. Cada módulo ejecuta:
+
+1. `prepare-agent` antes de las pruebas.
+2. `report` en la fase `test`.
+3. `check` con `LINE/COVEREDRATIO >= 0.80` sobre el bundle de ese módulo.
+
+Así, un módulo no puede compensar la baja cobertura del otro. Los reportes se
+generan bajo `gateway-service/target/site/jacoco/` y
+`demo-api/target/site/jacoco/`.
+
+Comando canónico:
+
+```bash
+./mvnw --batch-mode --no-transfer-progress clean test
+```
+
+En Windows PowerShell:
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress clean test
+```
+
+Debe utilizarse JDK 17, igual que CI.
+
+## Estado de Docker y E2E
+
+La topología usa `front-network` y `back-network`; la segunda es interna. Solo
+el gateway publica `8080:8080`.
+
+La matriz actual se ejecuta con:
+
+```bash
+python3 client-tests/run_demo.py
+```
+
+o en Windows cuando Python se expone mediante el launcher:
+
+```powershell
+py -3 client-tests/run_demo.py
+```
+
+El criterio de aprobación completo es `12 passed, 0 failed, 0 skipped`. Cada
+corrida escribe `docs/evidence/e2e-<fecha UTC>.json` sin secretos.
+
+## Estado de CI/CD
+
+`.github/workflows/ci.yml` se activa en pull requests, pushes a `main` y
+manualmente. Su único job secuencial:
+
+1. Ejecuta JUnit 5 y el gate JaCoCo.
+2. Publica porcentajes en el resumen.
+3. Empaqueta con Maven.
+4. Carga reportes JaCoCo.
+5. Genera credenciales efímeras aleatorias.
+6. Construye imágenes Docker.
+7. Despliega Compose en el runner aislado.
+8. Espera `/health`.
+9. Ejecuta E01–E12.
+10. Carga evidencia/logs.
+11. Siempre desmonta el entorno si llegó a iniciarse.
+
+El despliegue es intencionalmente efímero y no produce una URL pública
+permanente.
+
+## Disciplina para cambios futuros
+
+1. Leer contrato, implementación y pruebas antes de modificar una política.
+2. No cambiar códigos HTTP/`error` sin actualizar runner y documentación.
+3. Ejecutar `clean test` con Java 17.
+4. Ejecutar E01–E12 sobre Docker cuando cambie comportamiento de integración.
+5. Buscar `.env`, secretos, logs, binarios y `target/` antes de confirmar.
+6. No debilitar el gate de 80% ni excluir código sustancial para aprobarlo.
