@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuthController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ModuShield Gateway Service</a> &gt; <a href="index.source.html" class="el_package">com.modushield.gateway.auth</a> &gt; <span class="el_source">AuthController.java</span></div><h1>AuthController.java</h1><pre class="source lang-java linenums">package com.modushield.gateway.auth;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.Map;
+
+@RestController
+@RequestMapping(&quot;/auth&quot;)
+public class AuthController {
+
+    private final UserService userService;
+    private final JwtService jwtService;
+
+<span class="fc" id="L21">    public AuthController(UserService userService, JwtService jwtService) {</span>
+<span class="fc" id="L22">        this.userService = userService;</span>
+<span class="fc" id="L23">        this.jwtService = jwtService;</span>
+<span class="fc" id="L24">    }</span>
+
+    @PostMapping(&quot;/register&quot;)
+    public ResponseEntity&lt;UserResponse&gt; register(@RequestBody Credentials credentials) {
+<span class="pc bpc" id="L28" title="1 of 2 branches missed.">        if (credentials == null) {</span>
+<span class="nc" id="L29">            throw new UserService.InvalidCredentialsException(&quot;Username and password are required&quot;);</span>
+        }
+<span class="fc" id="L31">        UserAccount account = userService.register(credentials.username(), credentials.password());</span>
+<span class="fc" id="L32">        return ResponseEntity.status(HttpStatus.CREATED)</span>
+<span class="fc" id="L33">                .body(new UserResponse(account.username(), account.role()));</span>
+    }
+
+    @PostMapping(&quot;/login&quot;)
+    public ResponseEntity&lt;?&gt; login(@RequestBody Credentials credentials) {
+<span class="pc bpc" id="L38" title="1 of 2 branches missed.">        if (credentials == null) {</span>
+<span class="nc" id="L39">            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)</span>
+<span class="nc" id="L40">                    .body(error(&quot;INVALID_CREDENTIALS&quot;, &quot;Invalid username or password&quot;));</span>
+        }
+<span class="fc" id="L42">        return userService.authenticate(credentials.username(), credentials.password())</span>
+<span class="fc" id="L43">                .&lt;ResponseEntity&lt;?&gt;&gt;map(account -&gt; {</span>
+<span class="fc" id="L44">                    JwtService.Token token = jwtService.createToken(account);</span>
+<span class="fc" id="L45">                    return ResponseEntity.ok(new LoginResponse(</span>
+<span class="fc" id="L46">                            token.value(),</span>
+                            &quot;Bearer&quot;,
+<span class="fc" id="L48">                            account.username(),</span>
+<span class="fc" id="L49">                            account.role(),</span>
+<span class="fc" id="L50">                            token.expiresAt()));</span>
+                })
+<span class="fc" id="L52">                .orElseGet(() -&gt; ResponseEntity.status(HttpStatus.UNAUTHORIZED)</span>
+<span class="fc" id="L53">                        .body(error(&quot;INVALID_CREDENTIALS&quot;, &quot;Invalid username or password&quot;)));</span>
+    }
+
+    @ExceptionHandler(UserService.UsernameAlreadyExistsException.class)
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; usernameExists() {
+<span class="fc" id="L58">        return ResponseEntity.status(HttpStatus.CONFLICT)</span>
+<span class="fc" id="L59">                .body(error(&quot;USERNAME_EXISTS&quot;, &quot;Username is already registered&quot;));</span>
+    }
+
+    @ExceptionHandler(UserService.InvalidCredentialsException.class)
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; invalidRegistration(RuntimeException exception) {
+<span class="fc" id="L64">        return ResponseEntity.badRequest()</span>
+<span class="fc" id="L65">                .body(error(&quot;INVALID_REGISTRATION&quot;, exception.getMessage()));</span>
+    }
+
+    private Map&lt;String, Object&gt; error(String code, String message) {
+<span class="fc" id="L69">        return Map.of(</span>
+<span class="fc" id="L70">                &quot;timestamp&quot;, Instant.now().toString(),</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">                &quot;status&quot;, code.equals(&quot;INVALID_CREDENTIALS&quot;) ? 401</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">                        : code.equals(&quot;USERNAME_EXISTS&quot;) ? 409 : 400,</span>
+                &quot;error&quot;, code,
+                &quot;message&quot;, message);
+    }
+
+<span class="fc" id="L77">    public record Credentials(String username, String password) {</span>
+    }
+
+<span class="fc" id="L80">    public record UserResponse(String username, UserRole role) {</span>
+    }
+
+<span class="fc" id="L83">    public record LoginResponse(</span>
+            String token,
+            String tokenType,
+            String username,
+            UserRole role,
+            Instant expiresAt
+    ) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

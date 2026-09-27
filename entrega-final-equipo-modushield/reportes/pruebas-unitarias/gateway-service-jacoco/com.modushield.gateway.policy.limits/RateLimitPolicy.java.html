@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RateLimitPolicy.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ModuShield Gateway Service</a> &gt; <a href="index.source.html" class="el_package">com.modushield.gateway.policy.limits</a> &gt; <span class="el_source">RateLimitPolicy.java</span></div><h1>RateLimitPolicy.java</h1><pre class="source lang-java linenums">package com.modushield.gateway.policy.limits;
+
+import com.modushield.gateway.error.ErrorResponseWriter;
+import com.modushield.gateway.policy.GatewayPolicy;
+import com.modushield.gateway.policy.PolicyDecision;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.util.HexFormat;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+
+/** Fixed-window, in-memory request limiter for the single-instance demo. */
+@Component
+public class RateLimitPolicy implements GlobalFilter, Ordered, GatewayPolicy {
+
+    private static final int ORDER = 60;
+    private static final String API_KEY_HEADER = &quot;X-API-Key&quot;;
+
+    private final int capacity;
+    private final long windowSeconds;
+    private final Clock clock;
+    private final ErrorResponseWriter errorResponseWriter;
+<span class="fc" id="L39">    private final Map&lt;String, UserBucket&gt; buckets = new ConcurrentHashMap&lt;&gt;();</span>
+    private final AtomicLong nextCleanupEpochSecond;
+
+    @Autowired
+    public RateLimitPolicy(
+            @Value(&quot;${modushield.limits.rate-limit-capacity:5}&quot;) int capacity,
+            @Value(&quot;${modushield.limits.rate-limit-window-seconds:10}&quot;) long windowSeconds,
+            ErrorResponseWriter errorResponseWriter
+    ) {
+<span class="fc" id="L48">        this(capacity, windowSeconds, Clock.systemUTC(), errorResponseWriter);</span>
+<span class="fc" id="L49">    }</span>
+
+    RateLimitPolicy(
+            int capacity,
+            long windowSeconds,
+            Clock clock,
+            ErrorResponseWriter errorResponseWriter
+<span class="fc" id="L56">    ) {</span>
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        if (capacity &lt;= 0) {</span>
+<span class="fc" id="L58">            throw new IllegalArgumentException(&quot;capacity must be greater than zero&quot;);</span>
+        }
+<span class="fc bfc" id="L60" title="All 2 branches covered.">        if (windowSeconds &lt;= 0) {</span>
+<span class="fc" id="L61">            throw new IllegalArgumentException(&quot;windowSeconds must be greater than zero&quot;);</span>
+        }
+<span class="fc" id="L63">        this.capacity = capacity;</span>
+<span class="fc" id="L64">        this.windowSeconds = windowSeconds;</span>
+<span class="fc" id="L65">        this.clock = Objects.requireNonNull(clock, &quot;clock&quot;);</span>
+<span class="fc" id="L66">        this.errorResponseWriter = Objects.requireNonNull(</span>
+                errorResponseWriter,
+                &quot;errorResponseWriter&quot;
+        );
+<span class="fc" id="L70">        this.nextCleanupEpochSecond = new AtomicLong(now() + windowSeconds);</span>
+<span class="fc" id="L71">    }</span>
+
+    @Override
+    public int getOrder() {
+<span class="fc" id="L75">        return ORDER;</span>
+    }
+
+    @Override
+    public Mono&lt;Void&gt; filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+<span class="fc" id="L80">        PolicyDecision decision = evaluate(exchange);</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        if (!decision.allowed()) {</span>
+<span class="fc" id="L82">            return errorResponseWriter.write(exchange, decision);</span>
+        }
+<span class="fc" id="L84">        return chain.filter(exchange);</span>
+    }
+
+    @Override
+    public PolicyDecision evaluate(ServerWebExchange exchange) {
+<span class="fc" id="L89">        long now = now();</span>
+<span class="fc" id="L90">        evictExpiredBuckets(now);</span>
+
+<span class="fc" id="L92">        String identityHash = hashIdentity(clientIdentity(exchange));</span>
+<span class="fc" id="L93">        UserBucket bucket = buckets.computeIfAbsent(identityHash, ignored -&gt; new UserBucket(now));</span>
+
+<span class="fc" id="L95">        synchronized (bucket) {</span>
+<span class="pc bpc" id="L96" title="2 of 4 branches missed.">            if (now &lt; bucket.windowStart || now - bucket.windowStart &gt;= windowSeconds) {</span>
+<span class="nc" id="L97">                bucket.windowStart = now;</span>
+<span class="nc" id="L98">                bucket.requestCount = 0;</span>
+            }
+
+<span class="fc bfc" id="L101" title="All 2 branches covered.">            if (bucket.requestCount &gt;= capacity) {</span>
+<span class="fc" id="L102">                return new PolicyDecision(</span>
+                        false,
+                        HttpStatus.TOO_MANY_REQUESTS,
+                        &quot;RATE_LIMIT_EXCEEDED&quot;,
+                        &quot;RATE_LIMIT&quot;,
+                        &quot;Request limit exceeded&quot;
+                );
+            }
+
+<span class="fc" id="L111">            bucket.requestCount++;</span>
+<span class="fc" id="L112">            return PolicyDecision.allow();</span>
+        }
+    }
+
+    int trackedIdentityCount() {
+<span class="fc" id="L117">        return buckets.size();</span>
+    }
+
+    Set&lt;String&gt; trackedIdentityHashes() {
+<span class="fc" id="L121">        return Set.copyOf(buckets.keySet());</span>
+    }
+
+    private String clientIdentity(ServerWebExchange exchange) {
+<span class="fc" id="L125">        String authenticatedUser = exchange.getRequest().getHeaders().getFirst(&quot;X-Authenticated-User&quot;);</span>
+<span class="pc bpc" id="L126" title="1 of 4 branches missed.">        if (authenticatedUser != null &amp;&amp; !authenticatedUser.isBlank()) {</span>
+<span class="fc" id="L127">            return &quot;user:&quot; + authenticatedUser;</span>
+        }
+<span class="fc" id="L129">        String apiKey = exchange.getRequest().getHeaders().getFirst(API_KEY_HEADER);</span>
+<span class="pc bpc" id="L130" title="2 of 4 branches missed.">        if (apiKey != null &amp;&amp; !apiKey.isBlank()) {</span>
+<span class="fc" id="L131">            return &quot;api-key:&quot; + apiKey;</span>
+        }
+
+<span class="nc" id="L134">        InetSocketAddress remoteAddress = exchange.getRequest().getRemoteAddress();</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        if (remoteAddress == null) {</span>
+<span class="nc" id="L136">            return &quot;ip:unknown&quot;;</span>
+        }
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        if (remoteAddress.getAddress() != null) {</span>
+<span class="nc" id="L139">            return &quot;ip:&quot; + remoteAddress.getAddress().getHostAddress();</span>
+        }
+<span class="nc" id="L141">        return &quot;ip:&quot; + remoteAddress.getHostString();</span>
+    }
+
+    private String hashIdentity(String identity) {
+        try {
+<span class="fc" id="L146">            byte[] digest = MessageDigest.getInstance(&quot;SHA-256&quot;)</span>
+<span class="fc" id="L147">                    .digest(identity.getBytes(StandardCharsets.UTF_8));</span>
+<span class="fc" id="L148">            return HexFormat.of().formatHex(digest);</span>
+<span class="nc" id="L149">        } catch (NoSuchAlgorithmException exception) {</span>
+<span class="nc" id="L150">            throw new IllegalStateException(&quot;SHA-256 is unavailable&quot;, exception);</span>
+        }
+    }
+
+    private void evictExpiredBuckets(long now) {
+<span class="fc" id="L155">        long scheduledCleanup = nextCleanupEpochSecond.get();</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">        if (now &lt; scheduledCleanup</span>
+<span class="pc bpc" id="L157" title="1 of 2 branches missed.">                || !nextCleanupEpochSecond.compareAndSet(</span>
+                        scheduledCleanup,
+                        now + windowSeconds
+                )) {
+<span class="fc" id="L161">            return;</span>
+        }
+
+<span class="fc" id="L164">        buckets.entrySet().removeIf(entry -&gt; isExpired(entry.getValue(), now));</span>
+<span class="fc" id="L165">    }</span>
+
+    private boolean isExpired(UserBucket bucket, long now) {
+<span class="fc" id="L168">        synchronized (bucket) {</span>
+<span class="pc bpc" id="L169" title="2 of 4 branches missed.">            return now &gt;= bucket.windowStart</span>
+                    &amp;&amp; now - bucket.windowStart &gt;= windowSeconds;
+        }
+    }
+
+    private long now() {
+<span class="fc" id="L175">        return clock.instant().getEpochSecond();</span>
+    }
+
+    private static final class UserBucket {
+        private long windowStart;
+        private int requestCount;
+
+<span class="fc" id="L182">        private UserBucket(long windowStart) {</span>
+<span class="fc" id="L183">            this.windowStart = windowStart;</span>
+<span class="fc" id="L184">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>JsonErrorResponseWriter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ModuShield Gateway Service</a> &gt; <a href="index.source.html" class="el_package">com.modushield.gateway.error</a> &gt; <span class="el_source">JsonErrorResponseWriter.java</span></div><h1>JsonErrorResponseWriter.java</h1><pre class="source lang-java linenums">package com.modushield.gateway.error;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modushield.gateway.audit.AuditContext;
+import com.modushield.gateway.filter.RequestIdFilter;
+import com.modushield.gateway.policy.PolicyDecision;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+
+/** Writes every gateway rejection using the shared public JSON contract. */
+@Component
+public class JsonErrorResponseWriter implements ErrorResponseWriter {
+
+    private final ObjectMapper objectMapper;
+    private final Clock clock;
+
+    @Autowired
+    public JsonErrorResponseWriter(ObjectMapper objectMapper) {
+<span class="fc" id="L31">        this(objectMapper, Clock.systemUTC());</span>
+<span class="fc" id="L32">    }</span>
+
+<span class="fc" id="L34">    JsonErrorResponseWriter(ObjectMapper objectMapper, Clock clock) {</span>
+<span class="fc" id="L35">        this.objectMapper = objectMapper;</span>
+<span class="fc" id="L36">        this.clock = clock;</span>
+<span class="fc" id="L37">    }</span>
+
+    @Override
+    public Mono&lt;Void&gt; write(ServerWebExchange exchange, PolicyDecision decision) {
+<span class="fc" id="L41">        Objects.requireNonNull(exchange, &quot;exchange&quot;);</span>
+<span class="fc" id="L42">        Objects.requireNonNull(decision, &quot;decision&quot;);</span>
+<span class="pc bpc" id="L43" title="2 of 4 branches missed.">        if (decision.allowed() || decision.status() == null) {</span>
+<span class="nc" id="L44">            return Mono.error(new IllegalArgumentException(&quot;Only denied decisions can be written&quot;));</span>
+        }
+<span class="pc bpc" id="L46" title="1 of 2 branches missed.">        if (exchange.getResponse().isCommitted()) {</span>
+<span class="nc" id="L47">            return Mono.empty();</span>
+        }
+
+<span class="fc" id="L50">        AuditContext.record(exchange, decision);</span>
+<span class="fc" id="L51">        String requestId = resolveRequestId(exchange);</span>
+<span class="fc" id="L52">        exchange.getResponse().setStatusCode(decision.status());</span>
+<span class="fc" id="L53">        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);</span>
+<span class="fc" id="L54">        exchange.getResponse().getHeaders().set(RequestIdFilter.REQUEST_ID_HEADER, requestId);</span>
+
+<span class="fc" id="L56">        Map&lt;String, Object&gt; body = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L57">        body.put(&quot;timestamp&quot;, Instant.now(clock).toString());</span>
+<span class="fc" id="L58">        body.put(&quot;status&quot;, decision.status().value());</span>
+<span class="fc" id="L59">        body.put(&quot;error&quot;, decision.code());</span>
+<span class="fc" id="L60">        body.put(&quot;message&quot;, decision.safeMessage());</span>
+<span class="fc" id="L61">        body.put(&quot;path&quot;, exchange.getRequest().getPath().value());</span>
+<span class="fc" id="L62">        body.put(&quot;requestId&quot;, requestId);</span>
+
+        try {
+<span class="fc" id="L65">            byte[] bytes = objectMapper.writeValueAsBytes(body);</span>
+<span class="fc" id="L66">            DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);</span>
+<span class="fc" id="L67">            return exchange.getResponse().writeWith(Mono.just(buffer));</span>
+<span class="nc" id="L68">        } catch (JsonProcessingException serializationFailure) {</span>
+<span class="nc" id="L69">            return Mono.error(serializationFailure);</span>
+        }
+    }
+
+    private String resolveRequestId(ServerWebExchange exchange) {
+<span class="fc" id="L74">        Object attribute = exchange.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);</span>
+<span class="pc bpc" id="L75" title="1 of 4 branches missed.">        if (attribute instanceof String requestId &amp;&amp; !requestId.isBlank()) {</span>
+<span class="fc" id="L76">            return requestId;</span>
+        }
+
+<span class="fc" id="L79">        String header = exchange.getRequest().getHeaders()</span>
+<span class="fc" id="L80">                .getFirst(RequestIdFilter.REQUEST_ID_HEADER);</span>
+<span class="pc bpc" id="L81" title="2 of 4 branches missed.">        if (header != null &amp;&amp; !header.isBlank()) {</span>
+<span class="fc" id="L82">            return header;</span>
+        }
+<span class="nc" id="L84">        return UUID.randomUUID().toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

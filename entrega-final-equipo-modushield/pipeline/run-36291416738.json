@@ -1,0 +1,44 @@
+{
+  "runId": 36291416738,
+  "runNumber": 9,
+  "workflow": "CI and test deployment",
+  "job": "Test, build, and deploy isolated environment",
+  "event": "push",
+  "branch": "main",
+  "commit": "d9a45cc58337a852720f0f1c9b13dd74434ea564",
+  "status": "completed",
+  "conclusion": "success",
+  "createdAt": "2026-09-27T03:26:38Z",
+  "updatedAt": "2026-09-27T03:29:31Z",
+  "url": "https://github.com/EvenWorseGroup/Modusheld/actions/runs/36291416738",
+  "successfulRequiredSteps": [
+    "Set up Java 17 with Maven cache",
+    "Run JUnit 5 tests and JaCoCo 80% quality gate",
+    "Publish coverage summary",
+    "Package application",
+    "Upload JaCoCo reports",
+    "Generate ephemeral CI credentials",
+    "Build Docker images",
+    "Deploy to isolated CI test environment",
+    "Wait for gateway readiness",
+    "Run E01-E12",
+    "Record successful test deployment",
+    "Upload E2E evidence",
+    "Tear down isolated environment"
+  ],
+  "artifacts": [
+    {
+      "name": "jacoco-reports-36291416738",
+      "sizeBytes": 402699,
+      "sha256": "b1ddefc91af65ea4626094f5be35db451def0f800ddfb5ca1f2fef94c982db47",
+      "expired": false
+    },
+    {
+      "name": "e2e-evidence-36291416738",
+      "sizeBytes": 1086,
+      "sha256": "48cc5eaf024e9a293b1a38f7c856fd718341ca8befc475ad256dffae416ffc75",
+      "expired": false
+    }
+  ],
+  "source": "GitHub Actions public REST API"
+}

@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ApiKeyFilter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ModuShield Gateway Service</a> &gt; <a href="index.source.html" class="el_package">com.modushield.gateway.policy.access</a> &gt; <span class="el_source">ApiKeyFilter.java</span></div><h1>ApiKeyFilter.java</h1><pre class="source lang-java linenums">package com.modushield.gateway.policy.access;
+
+import com.modushield.gateway.error.ErrorResponseWriter;
+import com.modushield.gateway.policy.GatewayPolicy;
+import com.modushield.gateway.policy.PolicyDecision;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+/**
+ * Java B - Politicas de acceso.
+ * Rama: feature/access-policies
+ * Contrato: manual seccion 9.2, plan maestro seccion 5.2 / 5.3.
+ *
+ * Reglas implementadas:
+ *  - MODUSHIELD_API_KEY se lee al iniciar; si esta vacia, el gateway falla explicitamente
+ *    (no se permite arrancar aceptando todo).
+ *  - /health y /api/products/** estan exentos: productos se autentica con JWT.
+ *  - Se lee exactamente una cabecera X-API-Key y se compara con el valor configurado.
+ *  - Ante ausencia o diferencia -&gt; 401 INVALID_API_KEY via ErrorResponseWriter.
+ *  - Nunca se registra la clave completa (ver AuditFilter, propiedad de Java D:
+ *    ese filtro solo debe recibir/mostrar keyPresent=true/false, nunca el valor).
+ *
+ * NOTA DE ORDEN: el plan maestro (seccion 3.2, congelado) coloca ApiKeyFilter
+ * DESPUES de RouteMethodPolicy. El manual (seccion 5.1) lo pone antes. Ante la
+ * contradiccion, el propio manual dice que prevalece el plan maestro, por eso
+ * este filtro corre despues de RouteMethodPolicy (ver getOrder()). Confirmar con
+ * Jairo si el equipo decide oficialmente lo contrario.
+ */
+@Component
+public class ApiKeyFilter implements GlobalFilter, Ordered, GatewayPolicy {
+
+    private static final String API_KEY_HEADER = &quot;X-API-Key&quot;;
+<span class="fc" id="L42">    private static final List&lt;String&gt; EXEMPT_PATHS = List.of(&quot;/health&quot;);</span>
+
+    private final AccessProperties accessProperties;
+    private final ErrorResponseWriter errorResponseWriter;
+
+<span class="fc" id="L47">    public ApiKeyFilter(AccessProperties accessProperties, ErrorResponseWriter errorResponseWriter) {</span>
+<span class="fc bfc" id="L48" title="All 4 branches covered.">        if (accessProperties.getApiKey() == null || accessProperties.getApiKey().isBlank()) {</span>
+<span class="fc" id="L49">            throw new IllegalStateException(</span>
+                    &quot;MODUSHIELD_API_KEY no esta configurada. El gateway no debe iniciar sin una clave valida.&quot;);
+        }
+<span class="fc" id="L52">        this.accessProperties = accessProperties;</span>
+<span class="fc" id="L53">        this.errorResponseWriter = errorResponseWriter;</span>
+<span class="fc" id="L54">    }</span>
+
+    @Override
+    public int getOrder() {
+        // JWT protege productos en 40; esta politica heredada protege ordenes en 45.
+<span class="fc" id="L59">        return 45;</span>
+    }
+
+    @Override
+    public Mono&lt;Void&gt; filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+<span class="fc" id="L64">        PolicyDecision decision = evaluate(exchange);</span>
+<span class="pc bpc" id="L65" title="1 of 2 branches missed.">        if (!decision.allowed()) {</span>
+<span class="nc" id="L66">            return errorResponseWriter.write(exchange, decision);</span>
+        }
+<span class="fc" id="L68">        return chain.filter(exchange);</span>
+    }
+
+    @Override
+    public PolicyDecision evaluate(ServerWebExchange exchange) {
+<span class="fc" id="L73">        ServerHttpRequest request = exchange.getRequest();</span>
+<span class="fc" id="L74">        String path = normalize(request.getPath().value());</span>
+
+        // Product operations use JWT authentication in JwtAuthenticationFilter.
+<span class="fc bfc" id="L77" title="All 4 branches covered.">        if (EXEMPT_PATHS.contains(path) || isProductPath(path)) {</span>
+<span class="fc" id="L78">            return PolicyDecision.allow();</span>
+        }
+
+<span class="fc" id="L81">        List&lt;String&gt; headerValues = request.getHeaders().get(API_KEY_HEADER);</span>
+<span class="fc bfc" id="L82" title="All 4 branches covered.">        boolean exactlyOneHeader = headerValues != null &amp;&amp; headerValues.size() == 1;</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">        String providedKey = exactlyOneHeader ? headerValues.get(0) : null;</span>
+
+<span class="pc bpc" id="L85" title="1 of 4 branches missed.">        if (providedKey == null || providedKey.isBlank()) {</span>
+<span class="fc" id="L86">            return invalidKey();</span>
+        }
+
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (!constantTimeEquals(providedKey, accessProperties.getApiKey())) {</span>
+<span class="fc" id="L90">            return invalidKey();</span>
+        }
+
+<span class="fc" id="L93">        return PolicyDecision.allow();</span>
+    }
+
+    private String normalize(String path) {
+<span class="pc bpc" id="L97" title="2 of 4 branches missed.">        if (path == null || path.isBlank()) {</span>
+<span class="nc" id="L98">            return &quot;/&quot;;</span>
+        }
+<span class="fc" id="L100">        String trimmed = path.trim();</span>
+<span class="pc bpc" id="L101" title="2 of 4 branches missed.">        if (trimmed.length() &gt; 1 &amp;&amp; trimmed.endsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L102">            trimmed = trimmed.substring(0, trimmed.length() - 1);</span>
+        }
+<span class="fc" id="L104">        return trimmed;</span>
+    }
+
+    private boolean isProductPath(String path) {
+<span class="fc bfc" id="L108" title="All 4 branches covered.">        return &quot;/api/products&quot;.equals(path) || path.startsWith(&quot;/api/products/&quot;);</span>
+    }
+
+    private PolicyDecision invalidKey() {
+<span class="fc" id="L112">        return new PolicyDecision(</span>
+                false,
+                HttpStatus.UNAUTHORIZED,
+                &quot;INVALID_API_KEY&quot;,
+                &quot;API_KEY&quot;,
+                &quot;Missing or invalid API key&quot;);
+    }
+
+    /**
+     * Comparacion en tiempo constante: evita que un atacante deduzca la clave
+     * midiendo cuanto tarda la comparacion caracter por caracter.
+     */
+    private boolean constantTimeEquals(String a, String b) {
+<span class="pc bpc" id="L125" title="2 of 4 branches missed.">        if (a == null || b == null) {</span>
+<span class="nc" id="L126">            return false;</span>
+        }
+<span class="fc" id="L128">        byte[] aBytes = a.getBytes(StandardCharsets.UTF_8);</span>
+<span class="fc" id="L129">        byte[] bBytes = b.getBytes(StandardCharsets.UTF_8);</span>
+<span class="fc" id="L130">        int diff = aBytes.length ^ bBytes.length;</span>
+<span class="fc" id="L131">        int shortest = Math.min(aBytes.length, bBytes.length);</span>
+<span class="fc bfc" id="L132" title="All 2 branches covered.">        for (int i = 0; i &lt; shortest; i++) {</span>
+<span class="fc" id="L133">            diff |= aBytes[i] ^ bBytes[i];</span>
+        }
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        return diff == 0;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

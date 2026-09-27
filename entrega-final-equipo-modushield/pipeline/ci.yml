@@ -1,0 +1,128 @@
+name: CI and test deployment
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modushield-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-and-e2e:
+    name: Test, build, and deploy isolated environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROJECT_NAME: modushield-ci-${{ github.run_id }}
+      RATE_LIMIT_WINDOW_SECONDS: "10"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17 with Maven cache
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Run JUnit 5 tests and JaCoCo 80% quality gate
+        run: ./mvnw --batch-mode --no-transfer-progress clean test
+
+      - name: Publish coverage summary
+        shell: bash
+        run: |
+          calculate_coverage() {
+            awk -F, 'NR > 1 { missed += $8; covered += $9 } END { printf "%.2f", 100 * covered / (covered + missed) }' "$1"
+          }
+          gateway_coverage=$(calculate_coverage gateway-service/target/site/jacoco/jacoco.csv)
+          demo_coverage=$(calculate_coverage demo-api/target/site/jacoco/jacoco.csv)
+          {
+            echo "## JaCoCo line coverage"
+            echo "| Module | Coverage | Required |"
+            echo "|---|---:|---:|"
+            echo "| gateway-service | ${gateway_coverage}% | 80% |"
+            echo "| demo-api | ${demo_coverage}% | 80% |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Package application
+        run: ./mvnw --batch-mode --no-transfer-progress -DskipTests -Djacoco.skip=true package
+
+      - name: Upload JaCoCo reports
+        uses: actions/upload-artifact@v7
+        with:
+          name: jacoco-reports-${{ github.run_id }}
+          path: |
+            gateway-service/target/site/jacoco/
+            demo-api/target/site/jacoco/
+          if-no-files-found: error
+
+      - name: Generate ephemeral CI credentials
+        shell: bash
+        run: |
+          echo "MODUSHIELD_API_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "JWT_SECRET=$(openssl rand -hex 48)" >> "$GITHUB_ENV"
+          echo "ADMIN_USERNAME=ci-admin-${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+          echo "ADMIN_PASSWORD=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - name: Build Docker images
+        run: docker compose -f infra/docker-compose.yml build
+
+      - name: Deploy to isolated CI test environment
+        id: compose_up
+        run: docker compose -f infra/docker-compose.yml up -d --no-build
+
+      - name: Wait for gateway readiness
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent http://localhost:8080/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose -f infra/docker-compose.yml ps
+          docker compose -f infra/docker-compose.yml logs --no-color
+          exit 1
+
+      - name: Run E01-E12
+        run: python3 client-tests/run_demo.py
+
+      - name: Record successful test deployment
+        shell: bash
+        run: |
+          {
+            echo "## Isolated test deployment"
+            echo ""
+            echo "- Environment: ephemeral GitHub-hosted Ubuntu runner"
+            echo "- Topology: Docker Compose gateway and internal demo-api"
+            echo "- Gateway readiness: passed at http://localhost:8080/health"
+            echo "- Deployment verification: E01-E12 passed"
+            echo "- Cleanup: the environment is removed after evidence collection"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture Docker logs after failure
+        if: failure() && steps.compose_up.outcome != 'skipped'
+        run: docker compose -f infra/docker-compose.yml logs --no-color > docker-compose.log
+
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-evidence-${{ github.run_id }}
+          path: |
+            docs/evidence/*.json
+            docker-compose.log
+          if-no-files-found: warn
+
+      - name: Tear down isolated environment
+        if: always() && steps.compose_up.outcome != 'skipped'
+        run: docker compose -f infra/docker-compose.yml down --volumes --remove-orphans

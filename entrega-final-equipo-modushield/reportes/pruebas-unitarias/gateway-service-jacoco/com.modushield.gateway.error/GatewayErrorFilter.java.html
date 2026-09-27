@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GatewayErrorFilter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ModuShield Gateway Service</a> &gt; <a href="index.source.html" class="el_package">com.modushield.gateway.error</a> &gt; <span class="el_source">GatewayErrorFilter.java</span></div><h1>GatewayErrorFilter.java</h1><pre class="source lang-java linenums">package com.modushield.gateway.error;
+
+import com.modushield.gateway.policy.PolicyDecision;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.net.ConnectException;
+import java.net.UnknownHostException;
+import java.util.concurrent.TimeoutException;
+
+/** Converts routing failures and unexpected downstream errors to the shared contract. */
+@Component
+public class GatewayErrorFilter implements GlobalFilter, Ordered {
+
+<span class="fc" id="L22">    private static final Logger LOGGER = LoggerFactory.getLogger(GatewayErrorFilter.class);</span>
+    // AuditFilter (owned by Java D) must use -90 so it can observe the final
+    // status produced here for upstream and unexpected failures.
+    private static final int ORDER = -80;
+
+    private final ErrorResponseWriter errorResponseWriter;
+
+<span class="fc" id="L29">    public GatewayErrorFilter(ErrorResponseWriter errorResponseWriter) {</span>
+<span class="fc" id="L30">        this.errorResponseWriter = errorResponseWriter;</span>
+<span class="fc" id="L31">    }</span>
+
+    @Override
+    public Mono&lt;Void&gt; filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+<span class="fc" id="L35">        return chain.filter(exchange).onErrorResume(exception -&gt; {</span>
+<span class="pc bpc" id="L36" title="1 of 2 branches missed.">            if (exchange.getResponse().isCommitted()) {</span>
+<span class="nc" id="L37">                return Mono.error(exception);</span>
+            }
+
+            PolicyDecision decision;
+<span class="fc bfc" id="L41" title="All 2 branches covered.">            if (isUpstreamUnavailable(exception)) {</span>
+<span class="fc" id="L42">                decision = new PolicyDecision(</span>
+                        false,
+                        HttpStatus.BAD_GATEWAY,
+                        &quot;UPSTREAM_UNAVAILABLE&quot;,
+                        &quot;UPSTREAM&quot;,
+                        &quot;Upstream service unavailable&quot;);
+            } else {
+<span class="fc" id="L49">                LOGGER.error(&quot;Unexpected gateway failure for {} {} (types={})&quot;,</span>
+<span class="fc" id="L50">                        exchange.getRequest().getMethod(),</span>
+<span class="fc" id="L51">                        exchange.getRequest().getPath(),</span>
+<span class="fc" id="L52">                        failureTypes(exception));</span>
+<span class="fc" id="L53">                decision = new PolicyDecision(</span>
+                        false,
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        &quot;INTERNAL_GATEWAY_ERROR&quot;,
+                        &quot;INTERNAL&quot;,
+                        &quot;Unexpected gateway error&quot;);
+            }
+<span class="fc" id="L60">            return errorResponseWriter.write(exchange, decision);</span>
+        });
+    }
+
+    @Override
+    public int getOrder() {
+<span class="fc" id="L66">        return ORDER;</span>
+    }
+
+    private boolean isUpstreamUnavailable(Throwable failure) {
+<span class="fc" id="L70">        Throwable current = failure;</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        while (current != null) {</span>
+<span class="pc bpc" id="L72" title="1 of 6 branches missed.">            if (current instanceof ConnectException</span>
+                    || current instanceof UnknownHostException
+                    || current instanceof TimeoutException) {
+<span class="fc" id="L75">                return true;</span>
+            }
+<span class="fc" id="L77">            String type = current.getClass().getSimpleName();</span>
+<span class="pc bpc" id="L78" title="2 of 4 branches missed.">            if (type.contains(&quot;ConnectTimeout&quot;) || type.contains(&quot;ReadTimeout&quot;)) {</span>
+<span class="nc" id="L79">                return true;</span>
+            }
+<span class="fc" id="L81">            current = current.getCause();</span>
+<span class="fc" id="L82">        }</span>
+<span class="fc" id="L83">        return false;</span>
+    }
+
+    private String failureTypes(Throwable failure) {
+<span class="fc" id="L87">        StringBuilder types = new StringBuilder();</span>
+<span class="fc" id="L88">        Throwable current = failure;</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        while (current != null) {</span>
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">            if (!types.isEmpty()) {</span>
+<span class="nc" id="L91">                types.append(&quot; -&gt; &quot;);</span>
+            }
+<span class="fc" id="L93">            types.append(current.getClass().getName());</span>
+<span class="fc" id="L94">            current = current.getCause();</span>
+        }
+<span class="fc" id="L96">        return types.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

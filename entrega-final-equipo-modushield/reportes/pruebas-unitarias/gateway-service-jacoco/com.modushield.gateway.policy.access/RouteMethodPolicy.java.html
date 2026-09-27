@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RouteMethodPolicy.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ModuShield Gateway Service</a> &gt; <a href="index.source.html" class="el_package">com.modushield.gateway.policy.access</a> &gt; <span class="el_source">RouteMethodPolicy.java</span></div><h1>RouteMethodPolicy.java</h1><pre class="source lang-java linenums">package com.modushield.gateway.policy.access;
+
+import com.modushield.gateway.error.ErrorResponseWriter;
+import com.modushield.gateway.policy.GatewayPolicy;
+import com.modushield.gateway.policy.PolicyDecision;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Java B - Politicas de acceso.
+ * Rama: feature/access-policies
+ * Contrato: manual seccion 9.3 (tabla de allowlist), plan maestro seccion 5.1/5.2.
+ *
+ * Tabla congelada:
+ *   /health              GET      -&gt; permitir
+ *   /api/products        GET      -&gt; permitir
+ *   /api/orders          POST     -&gt; permitir
+ *   /api/admin/status    GET      -&gt; 403 ROUTE_NOT_ALLOWED (existe en demo-api a proposito,
+ *                                     el bloqueo debe verse aqui, no en el backend)
+ *   cualquier otra /api/** *      -&gt; 403 ROUTE_NOT_ALLOWED
+ *   ruta permitida + otro metodo  -&gt; 405 METHOD_NOT_ALLOWED
+ *
+ * Logica (orden obligatorio, manual 9.3.1-9.3.3):
+ *   1) normalizar la ruta sin decodificar de forma insegura ni aceptar variantes ambiguas
+ *   2) comprobar primero si la ruta esta en la allowlist; si no, 403
+ *   3) si la ruta existe pero el metodo no esta permitido, 405
+ */
+@Component
+public class RouteMethodPolicy implements GlobalFilter, Ordered, GatewayPolicy {
+
+<span class="fc" id="L42">    private static final Map&lt;String, Set&lt;HttpMethod&gt;&gt; ALLOWLIST = Map.of(</span>
+<span class="fc" id="L43">            &quot;/health&quot;, Set.of(HttpMethod.GET),</span>
+<span class="fc" id="L44">            &quot;/api/orders&quot;, Set.of(HttpMethod.POST)</span>
+    );
+<span class="fc" id="L46">    private static final Set&lt;HttpMethod&gt; PRODUCT_COLLECTION_METHODS = Set.of(</span>
+            HttpMethod.GET, HttpMethod.POST);
+<span class="fc" id="L48">    private static final Set&lt;HttpMethod&gt; PRODUCT_ITEM_METHODS = Set.of(</span>
+            HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE);
+
+    private final ErrorResponseWriter errorResponseWriter;
+
+<span class="fc" id="L53">    public RouteMethodPolicy(ErrorResponseWriter errorResponseWriter) {</span>
+<span class="fc" id="L54">        this.errorResponseWriter = errorResponseWriter;</span>
+<span class="fc" id="L55">    }</span>
+
+    @Override
+    public int getOrder() {
+        // Corre antes de ApiKeyFilter (30 &lt; 40), segun el orden congelado del plan maestro.
+<span class="fc" id="L60">        return 30;</span>
+    }
+
+    @Override
+    public Mono&lt;Void&gt; filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+<span class="fc" id="L65">        PolicyDecision decision = evaluate(exchange);</span>
+<span class="fc bfc" id="L66" title="All 2 branches covered.">        if (!decision.allowed()) {</span>
+<span class="fc" id="L67">            return errorResponseWriter.write(exchange, decision);</span>
+        }
+<span class="fc" id="L69">        return chain.filter(exchange);</span>
+    }
+
+    @Override
+    public PolicyDecision evaluate(ServerWebExchange exchange) {
+<span class="fc" id="L74">        ServerHttpRequest request = exchange.getRequest();</span>
+        // Inspect the raw URI before Spring's path representation can collapse
+        // repeated separators or otherwise hide an ambiguous input.
+<span class="fc" id="L77">        String rawPath = request.getURI().getRawPath();</span>
+
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (isAmbiguous(rawPath)) {</span>
+<span class="fc" id="L80">            return routeNotAllowed();</span>
+        }
+
+<span class="fc" id="L83">        String normalized = normalize(rawPath);</span>
+<span class="fc" id="L84">        Set&lt;HttpMethod&gt; allowedMethods = productMethods(normalized);</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">        if (allowedMethods == null) {</span>
+<span class="fc" id="L86">            allowedMethods = ALLOWLIST.get(normalized);</span>
+        }
+
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (allowedMethods == null) {</span>
+<span class="fc" id="L90">            return routeNotAllowed();</span>
+        }
+
+<span class="fc" id="L93">        HttpMethod method = request.getMethod();</span>
+<span class="pc bpc" id="L94" title="1 of 4 branches missed.">        if (method == null || !allowedMethods.contains(method)) {</span>
+<span class="fc" id="L95">            return methodNotAllowed();</span>
+        }
+
+<span class="fc" id="L98">        return PolicyDecision.allow();</span>
+    }
+
+    /**
+     * Rechaza variantes ambiguas o intentos de evasion (path traversal, doble
+     * codificacion de &quot;/&quot;, segmentos vacios repetidos) sin intentar decodificar
+     * de forma &quot;inteligente&quot; — mejor negar por defecto.
+     */
+    private boolean isAmbiguous(String path) {
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">        if (path == null) {</span>
+<span class="nc" id="L108">            return true;</span>
+        }
+<span class="fc" id="L110">        String lower = path.toLowerCase(Locale.ROOT);</span>
+<span class="pc bpc" id="L111" title="1 of 8 branches missed.">        return lower.contains(&quot;..&quot;) || lower.contains(&quot;%2f&quot;) || lower.contains(&quot;%2e&quot;) || lower.contains(&quot;//&quot;);</span>
+    }
+
+    private String normalize(String path) {
+<span class="pc bpc" id="L115" title="2 of 4 branches missed.">        if (path == null || path.isBlank()) {</span>
+<span class="nc" id="L116">            return &quot;/&quot;;</span>
+        }
+<span class="fc" id="L118">        String trimmed = path.trim();</span>
+<span class="pc bpc" id="L119" title="1 of 4 branches missed.">        if (trimmed.length() &gt; 1 &amp;&amp; trimmed.endsWith(&quot;/&quot;)) {</span>
+<span class="fc" id="L120">            trimmed = trimmed.substring(0, trimmed.length() - 1);</span>
+        }
+<span class="fc" id="L122">        return trimmed;</span>
+    }
+
+    private Set&lt;HttpMethod&gt; productMethods(String path) {
+<span class="fc bfc" id="L126" title="All 2 branches covered.">        if (&quot;/api/products&quot;.equals(path)) {</span>
+<span class="fc" id="L127">            return PRODUCT_COLLECTION_METHODS;</span>
+        }
+<span class="fc bfc" id="L129" title="All 2 branches covered.">        if (!path.startsWith(&quot;/api/products/&quot;)) {</span>
+<span class="fc" id="L130">            return null;</span>
+        }
+<span class="fc" id="L132">        String id = path.substring(&quot;/api/products/&quot;.length());</span>
+<span class="pc bpc" id="L133" title="2 of 4 branches missed.">        return !id.isBlank() &amp;&amp; !id.contains(&quot;/&quot;) ? PRODUCT_ITEM_METHODS : null;</span>
+    }
+
+    private PolicyDecision routeNotAllowed() {
+<span class="fc" id="L137">        return new PolicyDecision(</span>
+                false,
+                HttpStatus.FORBIDDEN,
+                &quot;ROUTE_NOT_ALLOWED&quot;,
+                &quot;ROUTE&quot;,
+                &quot;Route is not permitted&quot;);
+    }
+
+    private PolicyDecision methodNotAllowed() {
+<span class="fc" id="L146">        return new PolicyDecision(</span>
+                false,
+                HttpStatus.METHOD_NOT_ALLOWED,
+                &quot;METHOD_NOT_ALLOWED&quot;,
+                &quot;METHOD&quot;,
+                &quot;Method is not permitted for this route&quot;);
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

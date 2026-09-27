@@ -1,0 +1,8 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+ModuShield Demo API,com.modushield.demo.model,OrderRequest,0,9,0,0,0,1,0,1,0,1
+ModuShield Demo API,com.modushield.demo.model,Product,0,12,0,0,0,1,0,1,0,1
+ModuShield Demo API,com.modushield.demo,DemoApiApplication,5,3,0,0,2,1,1,1,1,1
+ModuShield Demo API,com.modushield.demo.controller,OrderController,0,44,4,6,0,11,4,3,0,2
+ModuShield Demo API,com.modushield.demo.controller,AdminController,0,7,0,0,0,2,0,2,0,2
+ModuShield Demo API,com.modushield.demo.controller,HealthController,0,7,0,0,0,2,0,2,0,2
+ModuShield Demo API,com.modushield.demo.controller,ProductController,0,159,7,19,0,35,7,14,0,8

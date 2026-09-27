@@ -1,0 +1,103 @@
+{
+  "timestamp": "2026-09-27T03:32:33.952490+00:00",
+  "baseUrl": "http://localhost:8080",
+  "commit": "d9a45cc",
+  "results": [
+    {
+      "scenario_id": "E01",
+      "name": "health",
+      "command": "GET /health",
+      "expected": "status=200",
+      "actual": "status=200",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E02",
+      "name": "valid products request",
+      "command": "POST /auth/login; GET /api/products + Authorization: Bearer <admin JWT>",
+      "expected": "status=200",
+      "actual": "status=200",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E03",
+      "name": "missing JWT",
+      "command": "GET /api/products",
+      "expected": "status=401 error=INVALID_TOKEN",
+      "actual": "status=401 error=INVALID_TOKEN",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E04",
+      "name": "invalid JWT",
+      "command": "GET /api/products + Authorization: Bearer <invalid JWT>",
+      "expected": "status=401 error=INVALID_TOKEN",
+      "actual": "status=401 error=INVALID_TOKEN",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E05",
+      "name": "blocked route",
+      "command": "GET /api/admin/status + X-API-Key: <configured>",
+      "expected": "status=403 error=ROUTE_NOT_ALLOWED",
+      "actual": "status=403 error=ROUTE_NOT_ALLOWED",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E06",
+      "name": "USER write denied",
+      "command": "POST /api/products + Authorization: Bearer <USER JWT>",
+      "expected": "status=403 error=INSUFFICIENT_PERMISSIONS",
+      "actual": "status=403 error=INSUFFICIENT_PERMISSIONS",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E07",
+      "name": "rate limit",
+      "command": "6 x authenticated GET /api/products in one rate window",
+      "expected": "statuses=[200, 200, 200, 200, 200, 429] error=RATE_LIMIT_EXCEEDED",
+      "actual": "statuses=[200, 200, 200, 200, 200, 429] error=RATE_LIMIT_EXCEEDED",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E08",
+      "name": "exact 8192-byte payload",
+      "command": "POST /api/orders with client-tests/payload-8192.json",
+      "expected": "status=201",
+      "actual": "status=201",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E09",
+      "name": "8193-byte payload",
+      "command": "POST /api/orders with client-tests/payload-8193.json",
+      "expected": "status=413 error=PAYLOAD_TOO_LARGE",
+      "actual": "status=413 error=PAYLOAD_TOO_LARGE",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E10",
+      "name": "upstream unavailable",
+      "command": "docker compose stop demo-api; GET /api/products; restart demo-api",
+      "expected": "status=502 error=UPSTREAM_UNAVAILABLE",
+      "actual": "status=502 error=UPSTREAM_UNAVAILABLE",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E11",
+      "name": "network isolation",
+      "command": "GET localhost:8081 and front-network -> demo-api:8081",
+      "expected": "host and front-network cannot reach demo-api:8081",
+      "actual": "host_status=None front_exit=6",
+      "outcome": "PASS"
+    },
+    {
+      "scenario_id": "E12",
+      "name": "audit event",
+      "command": "GET /api/products with unique requestId; inspect gateway logs",
+      "expected": "requestId present and JWT absent from logs",
+      "actual": "request_status=200 request_id_found=True jwt_found=False",
+      "outcome": "PASS"
+    }
+  ]
+}

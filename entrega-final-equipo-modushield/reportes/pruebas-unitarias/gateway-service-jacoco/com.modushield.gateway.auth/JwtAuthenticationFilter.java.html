@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>JwtAuthenticationFilter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ModuShield Gateway Service</a> &gt; <a href="index.source.html" class="el_package">com.modushield.gateway.auth</a> &gt; <span class="el_source">JwtAuthenticationFilter.java</span></div><h1>JwtAuthenticationFilter.java</h1><pre class="source lang-java linenums">package com.modushield.gateway.auth;
+
+import com.modushield.gateway.error.ErrorResponseWriter;
+import com.modushield.gateway.policy.PolicyDecision;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.Optional;
+
+@Component
+public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
+
+    public static final String AUTHENTICATED_USER_ATTRIBUTE = &quot;modushield.authenticatedUser&quot;;
+    private static final String BEARER_PREFIX = &quot;Bearer &quot;;
+    private static final int ORDER = 40;
+
+    private final JwtService jwtService;
+    private final ErrorResponseWriter errorResponseWriter;
+
+<span class="fc" id="L28">    public JwtAuthenticationFilter(JwtService jwtService, ErrorResponseWriter errorResponseWriter) {</span>
+<span class="fc" id="L29">        this.jwtService = jwtService;</span>
+<span class="fc" id="L30">        this.errorResponseWriter = errorResponseWriter;</span>
+<span class="fc" id="L31">    }</span>
+
+    @Override
+    public Mono&lt;Void&gt; filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+<span class="pc bpc" id="L35" title="1 of 2 branches missed.">        if (!isProductPath(exchange.getRequest().getPath().value())) {</span>
+<span class="nc" id="L36">            return chain.filter(exchange);</span>
+        }
+
+<span class="fc" id="L39">        List&lt;String&gt; authorizationHeaders = exchange.getRequest().getHeaders().get(HttpHeaders.AUTHORIZATION);</span>
+<span class="pc bpc" id="L40" title="1 of 4 branches missed.">        if (authorizationHeaders == null || authorizationHeaders.size() != 1) {</span>
+<span class="fc" id="L41">            return unauthorized(exchange);</span>
+        }
+
+<span class="fc" id="L44">        String header = authorizationHeaders.get(0);</span>
+<span class="pc bpc" id="L45" title="2 of 4 branches missed.">        if (header == null || !header.startsWith(BEARER_PREFIX)) {</span>
+<span class="nc" id="L46">            return unauthorized(exchange);</span>
+        }
+<span class="fc" id="L48">        String serializedToken = header.substring(BEARER_PREFIX.length()).trim();</span>
+<span class="pc bpc" id="L49" title="2 of 4 branches missed.">        if (serializedToken.isEmpty() || serializedToken.contains(&quot; &quot;)) {</span>
+<span class="nc" id="L50">            return unauthorized(exchange);</span>
+        }
+
+<span class="fc" id="L53">        Optional&lt;JwtService.AuthenticatedUser&gt; authenticated = jwtService.validate(serializedToken);</span>
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">        if (authenticated.isEmpty()) {</span>
+<span class="nc" id="L55">            return unauthorized(exchange);</span>
+        }
+
+<span class="fc" id="L58">        JwtService.AuthenticatedUser user = authenticated.get();</span>
+<span class="fc bfc" id="L59" title="All 4 branches covered.">        if (!isReadMethod(exchange.getRequest().getMethod()) &amp;&amp; user.role() != UserRole.ADMIN) {</span>
+<span class="fc" id="L60">            return errorResponseWriter.write(exchange, new PolicyDecision(</span>
+                    false,
+                    HttpStatus.FORBIDDEN,
+                    &quot;INSUFFICIENT_PERMISSIONS&quot;,
+                    &quot;AUTHORIZATION&quot;,
+                    &quot;Administrator role is required for this operation&quot;));
+        }
+
+<span class="fc" id="L68">        exchange.getAttributes().put(AUTHENTICATED_USER_ATTRIBUTE, user);</span>
+<span class="fc" id="L69">        ServerWebExchange authenticatedExchange = exchange.mutate()</span>
+<span class="fc" id="L70">                .request(request -&gt; request</span>
+<span class="fc" id="L71">                        .headers(headers -&gt; {</span>
+<span class="fc" id="L72">                            headers.remove(HttpHeaders.AUTHORIZATION);</span>
+<span class="fc" id="L73">                            headers.remove(&quot;X-Authenticated-User&quot;);</span>
+<span class="fc" id="L74">                            headers.remove(&quot;X-Authenticated-Role&quot;);</span>
+<span class="fc" id="L75">                        })</span>
+<span class="fc" id="L76">                        .header(&quot;X-Authenticated-User&quot;, user.username())</span>
+<span class="fc" id="L77">                        .header(&quot;X-Authenticated-Role&quot;, user.role().name()))</span>
+<span class="fc" id="L78">                .build();</span>
+<span class="fc" id="L79">        return chain.filter(authenticatedExchange);</span>
+    }
+
+    @Override
+    public int getOrder() {
+<span class="fc" id="L84">        return ORDER;</span>
+    }
+
+    private boolean isProductPath(String path) {
+<span class="pc bpc" id="L88" title="1 of 4 branches missed.">        return &quot;/api/products&quot;.equals(path) || path.startsWith(&quot;/api/products/&quot;);</span>
+    }
+
+    private boolean isReadMethod(HttpMethod method) {
+<span class="fc" id="L92">        return HttpMethod.GET.equals(method);</span>
+    }
+
+    private Mono&lt;Void&gt; unauthorized(ServerWebExchange exchange) {
+<span class="fc" id="L96">        return errorResponseWriter.write(exchange, new PolicyDecision(</span>
+                false,
+                HttpStatus.UNAUTHORIZED,
+                &quot;INVALID_TOKEN&quot;,
+                &quot;AUTHENTICATION&quot;,
+                &quot;Missing, invalid or expired bearer token&quot;));
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

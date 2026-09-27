@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RequestIdFilter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ModuShield Gateway Service</a> &gt; <a href="index.source.html" class="el_package">com.modushield.gateway.filter</a> &gt; <span class="el_source">RequestIdFilter.java</span></div><h1>RequestIdFilter.java</h1><pre class="source lang-java linenums">package com.modushield.gateway.filter;
+
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.util.UUID;
+import java.util.regex.Pattern;
+
+/**
+ * Creates a correlation id when it is absent and preserves a safe client id
+ * when it is present. The same value is forwarded upstream and returned to the
+ * client.
+ */
+@Component
+<span class="fc" id="L20">public class RequestIdFilter implements GlobalFilter, Ordered {</span>
+
+    public static final String REQUEST_ID_HEADER = &quot;X-Request-Id&quot;;
+<span class="fc" id="L23">    public static final String REQUEST_ID_ATTRIBUTE =</span>
+<span class="fc" id="L24">            RequestIdFilter.class.getName() + &quot;.requestId&quot;;</span>
+
+    private static final int ORDER = -100;
+<span class="fc" id="L27">    private static final Pattern SAFE_REQUEST_ID =</span>
+<span class="fc" id="L28">            Pattern.compile(&quot;[A-Za-z0-9][A-Za-z0-9._:-]{0,127}&quot;);</span>
+
+    @Override
+    public Mono&lt;Void&gt; filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+<span class="fc" id="L32">        String supplied = exchange.getRequest().getHeaders().getFirst(REQUEST_ID_HEADER);</span>
+<span class="fc bfc" id="L33" title="All 2 branches covered.">        String requestId = isSafe(supplied) ? supplied : UUID.randomUUID().toString();</span>
+
+<span class="fc" id="L35">        ServerHttpRequest request = exchange.getRequest()</span>
+<span class="fc" id="L36">                .mutate()</span>
+<span class="fc" id="L37">                .headers(headers -&gt; headers.set(REQUEST_ID_HEADER, requestId))</span>
+<span class="fc" id="L38">                .build();</span>
+
+<span class="fc" id="L40">        ServerWebExchange correlatedExchange = exchange.mutate().request(request).build();</span>
+<span class="fc" id="L41">        correlatedExchange.getAttributes().put(REQUEST_ID_ATTRIBUTE, requestId);</span>
+<span class="fc" id="L42">        correlatedExchange.getResponse().getHeaders().set(REQUEST_ID_HEADER, requestId);</span>
+
+<span class="fc" id="L44">        return chain.filter(correlatedExchange);</span>
+    }
+
+    @Override
+    public int getOrder() {
+<span class="fc" id="L49">        return ORDER;</span>
+    }
+
+    private boolean isSafe(String candidate) {
+<span class="fc bfc" id="L53" title="All 4 branches covered.">        return candidate != null &amp;&amp; SAFE_REQUEST_ID.matcher(candidate).matches();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>
