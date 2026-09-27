@@ -1,131 +1,657 @@
 # ModuShield
 
-ModuShield es un prototipo academico de API Gateway de seguridad construido con Java 17, Spring Boot y Spring Cloud Gateway. El gateway es el unico punto publico: identifica cada solicitud, aplica politicas, devuelve errores uniformes y reenvia solamente trafico permitido a una API interna.
+ModuShield es un prototipo académico de API Gateway de seguridad construido
+con Java 17, Spring Boot y Spring Cloud Gateway. El gateway es el único punto
+público: identifica cada solicitud, aplica políticas de seguridad, devuelve
+errores uniformes y reenvía únicamente el tráfico permitido a una API interna.
 
-## Estado de integracion
+Este README contiene el recorrido completo para instalar, configurar, ejecutar
+y verificar el proyecto desde un repositorio recién clonado.
 
-| Area | Estado actual | Responsable |
+## 1. Arquitectura y funcionalidades
+
+ModuShield es una aplicación Maven multimódulo:
+
+- `gateway-service`: gateway público disponible en `http://localhost:8080`.
+- `demo-api`: API interna de productos y órdenes. Escucha en el puerto 8081
+  dentro de la red privada de Docker, pero no se publica hacia el host.
+- `client-tests/run_demo.py`: ejecutor E2E de los escenarios E01–E12.
+
+Las reglas principales son:
+
+- `/api/products/**` utiliza JWT.
+- `USER` puede consultar productos mediante `GET`.
+- `ADMIN` puede crear, consultar, actualizar y eliminar productos.
+- La ruta heredada `POST /api/orders` utiliza `X-API-Key`.
+- Las contraseñas se almacenan como hashes BCrypt.
+- Los usuarios registrados y los productos viven en memoria. Reiniciar el
+  contenedor correspondiente restablece esos datos.
+- Solamente el gateway está expuesto al host.
+
+El recorrido completo es:
+
+```text
+Clonar -> configurar -> iniciar -> autenticar -> autorizar -> pruebas unitarias
+       -> cobertura -> empaquetar -> Docker -> E01-E12 -> evidencia
+       -> limpieza -> verificación de GitHub Actions
+```
+
+## 2. Prerrequisitos
+
+| Herramienta | Uso | Verificación |
 |---|---|---|
-| Estructura Maven y contratos comunes | Integrado | Jairo / Core |
-| Routing, request ID y errores 500/502 | Integrado a partir de la entrega A | Java A |
-| JWT, usuarios, roles, rutas y metodos | Integrado con pruebas unitarias | Java B |
-| Tamano maximo y rate limit | Integrado con pruebas unitarias | Java C |
-| Demo API y auditoria | Integrado con pruebas | Java D |
-| Docker, E2E y documentacion | Validado en Docker: 12/12 | Jairo |
+| Git | Clonar e identificar la revisión | `git --version` |
+| JDK 17 | Compilar y ejecutar JUnit 5/JaCoCo | `java -version` |
+| Docker con Compose | Construir y ejecutar la topología | `docker version` y `docker compose version` |
+| Python 3 | Ejecutar `client-tests/run_demo.py` | `python3 --version` |
+| curl | Pruebas HTTP manuales | `curl --version` |
+| OpenSSL | Generar credenciales aleatorias | `openssl version` |
 
-La matriz E01-E12 fue aprobada en Docker despues de integrar C. Se debe repetir
-la corrida y guardar evidencia al preparar el commit o tag definitivo.
+Utiliza JDK 17, por ejemplo Eclipse Temurin 17. GitHub Actions también utiliza
+Temurin 17. Aunque Maven compila con objetivo Java 17, otra versión puede
+cambiar el comportamiento de las pruebas. Algunas instalaciones de Java 21
+impiden que Mockito/Byte Buddy adjunte su agente.
 
-## Requisitos
+```bash
+java -version
+./mvnw -version
+```
 
-- Java 17 o superior para ejecutar Maven con objetivo Java 17.
-- Docker con Docker Compose para la topologia completa.
-- Python 3 para el ejecutor E2E (solo usa la biblioteca estandar).
+Ambos comandos deben indicar Java 17. En macOS, si tienes varias versiones:
 
-No hace falta instalar Maven globalmente: el repositorio incluye Maven Wrapper.
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+export PATH="$JAVA_HOME/bin:$PATH"
+```
 
-## Preparacion
+En Windows, Docker Desktop junto con Git Bash o WSL permite ejecutar los
+comandos Bash sin cambios. Para Maven también puedes usar `mvnw.cmd` desde
+PowerShell.
+
+Verifica que Docker esté iniciado:
+
+```bash
+docker info
+```
+
+No necesitas instalar Maven globalmente: el repositorio incluye Maven Wrapper.
+
+## 3. Clonar el repositorio
+
+```bash
+git clone https://github.com/EvenWorseGroup/Modusheld.git
+cd Modusheld
+git switch main
+git pull --ff-only
+git status --short --branch
+git rev-parse --short HEAD
+```
+
+`git status` no debe mostrar modificaciones locales inesperadas.
+
+## 4. Configurar `.env` y el administrador
+
+Crea el archivo local desde la plantilla versionada:
 
 ```bash
 cp .env.example .env
-./mvnw clean test
 ```
 
-En Windows PowerShell:
+En PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
-.\mvnw.cmd clean test
 ```
 
-Antes de iniciar Docker, reemplaza todos los placeholders de `.env`. `JWT_SECRET`
-debe tener por lo menos 32 bytes; por ejemplo, puedes generar uno con
-`openssl rand -base64 48`. El secreto JWT y la contrasena del administrador son
-locales y nunca deben subirse al repositorio.
+Genera valores privados localmente:
 
-## Ejecucion con Docker
+```bash
+openssl rand -hex 32   # MODUSHIELD_API_KEY
+openssl rand -hex 48   # JWT_SECRET
+openssl rand -hex 24   # ADMIN_PASSWORD
+```
+
+Edita `.env` y sustituye todos los placeholders:
+
+```dotenv
+MODUSHIELD_API_KEY=<salida aleatoria de openssl rand -hex 32>
+JWT_SECRET=<salida aleatoria de openssl rand -hex 48>
+JWT_EXPIRATION_SECONDS=3600
+ADMIN_USERNAME=<nombre del administrador>
+ADMIN_PASSWORD=<salida aleatoria de openssl rand -hex 24>
+DEMO_API_URL=http://demo-api:8081
+MAX_REQUEST_SIZE_BYTES=8192
+RATE_LIMIT_CAPACITY=5
+RATE_LIMIT_WINDOW_SECONDS=10
+SERVER_PORT=8080
+```
+
+Reglas validadas por la aplicación:
+
+- `JWT_SECRET` debe contener al menos 32 bytes.
+- `ADMIN_USERNAME` debe tener entre 3 y 64 caracteres y solamente puede
+  contener letras, números, `.`, `_` o `-`.
+- `ADMIN_PASSWORD` debe tener entre 8 y 128 caracteres.
+- Los valores numéricos deben ser positivos.
+- La API key, secreto JWT y credenciales ADMIN no pueden estar vacíos.
+
+El administrador se crea en memoria cada vez que inicia el gateway. El endpoint
+de registro solamente crea usuarios `USER`.
+
+Comprueba que Git ignora el archivo secreto:
+
+```bash
+git status --short --ignored .env
+git check-ignore -v .env
+```
+
+Nunca subas `.env` ni incluyas sus valores en capturas, issues, comentarios o
+archivos del workflow.
+
+## 5. Iniciar la aplicación con Docker Compose
 
 ```bash
 docker compose -f infra/docker-compose.yml --env-file .env up -d --build
 docker compose -f infra/docker-compose.yml --env-file .env ps
-python client-tests/run_demo.py
-docker compose -f infra/docker-compose.yml --env-file .env down
 ```
 
-El host publica unicamente `localhost:8080`. `demo-api:8081` existe solo en `back-network`; si `localhost:8081` responde, el aislamiento esta mal configurado.
+El resultado esperado es:
 
-## Pipeline CI/CD y entorno de prueba
+- `gateway` está activo y publica el puerto 8080.
+- `demo-api` está activo, pero no publica un puerto del host.
 
-El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) se ejecuta en
-cada pull request, en cada push a `main` y tambien se puede iniciar manualmente.
-Usa un runner Ubuntu hospedado por GitHub como entorno de prueba aislado y
-efimero. No requiere un servidor externo, un GitHub Environment ni secretos
-configurados en el repositorio.
-
-Las etapas logicas se ejecutan en este orden:
-
-1. **Pruebas:** JUnit 5 y el gate JaCoCo de 80 % por modulo.
-2. **Construccion:** empaquetado Maven y construccion de las imagenes Docker.
-3. **Despliegue de prueba:** `docker compose up` inicia gateway y demo-api en el
-   runner aislado.
-4. **Verificacion:** espera `/health` y ejecuta E01-E12 mediante
-   `client-tests/run_demo.py`.
-5. **Evidencia y limpieza:** publica los reportes JaCoCo y el JSON E2E como
-   artefactos; despues ejecuta `docker compose down` incluso si falla una prueba.
-
-El endpoint `http://localhost:8080` existe solamente durante la ejecucion del
-workflow. La evidencia demostrable es la ejecucion exitosa en GitHub Actions,
-su resumen y los artefactos `jacoco-reports-*` y `e2e-evidence-*`. El entorno se
-elimina intencionalmente al terminar para que cada ejecucion sea reproducible e
-independiente.
-
-Para probar el pipeline desde GitHub, abre **Actions**, selecciona
-**CI and test deployment**, elige **Run workflow** sobre `main` y espera que el
-job **Test, build, and deploy isolated environment** finalice en verde. Tambien
-se ejecutara automaticamente con el siguiente push a `main`.
-
-## Autenticacion y productos
-
-Registro y login se realizan en el gateway. Los usuarios registrados reciben el
-rol `USER`; el usuario `ADMIN` se crea al arrancar a partir de `ADMIN_USERNAME` y
-`ADMIN_PASSWORD`. Las contrasenas se conservan como hashes BCrypt y los usuarios
-registrados viven en memoria durante la ejecucion del gateway.
+Si el arranque falla:
 
 ```bash
-curl -X POST http://localhost:8080/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"reader","password":"change-this-password"}'
-
-curl -X POST http://localhost:8080/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"reader","password":"change-this-password"}'
-
-curl http://localhost:8080/api/products \
-  -H "Authorization: Bearer $TOKEN"
+docker compose -f infra/docker-compose.yml --env-file .env logs --no-color
 ```
 
-Un `USER` puede ejecutar `GET /api/products` y `GET /api/products/{id}`. El
-`ADMIN` tambien puede ejecutar `POST /api/products`, `PUT /api/products/{id}` y
-`DELETE /api/products/{id}`. Tokens ausentes, invalidos, alterados o vencidos
-reciben `401`; una escritura intentada por un `USER` recibe `403`.
-
-## Pruebas durante la integracion
-
-Para ejecutar E01-E09 sin detener contenedores ni inspeccionar redes/logs:
+## 6. Verificar salud y aislamiento
 
 ```bash
-python client-tests/run_demo.py --http-only
+curl -i http://localhost:8080/health
 ```
 
-La corrida completa ejecuta E01-E12, detiene y vuelve a iniciar `demo-api` durante E10, valida el aislamiento en E11 e inspecciona la auditoria en E12. Cada corrida guarda un JSON sin secretos en `docs/evidence/` y devuelve codigo distinto de cero si existe un fallo. E07 valida la sexta solicitud con 429; E08/E09 validan los bordes de 8192/8193 bytes.
+Resultado esperado: HTTP `200` y `"status":"UP"`.
 
-## Contratos que no deben cambiarse sin acuerdo
+Comprueba que el backend no está expuesto:
 
-- Productos: `Authorization: Bearer <JWT>`; ordenes heredadas conservan `X-API-Key`.
-- Correlacion: `X-Request-Id` en solicitud reenviada y respuesta.
-- Rutas de producto: GET de coleccion/elemento para `USER`; CRUD completo para `ADMIN`.
-- Errores JWT: `401 INVALID_TOKEN` y `403 INSUFFICIENT_PERMISSIONS`.
-- JSON de error: `timestamp`, `status`, `error`, `message`, `path`, `requestId`.
-- Limites: 8192 bytes y cinco solicitudes por diez segundos por identidad.
+```bash
+curl --fail --show-error --max-time 3 http://localhost:8081/health
+```
 
-Consulta [arquitectura](docs/architecture.md), [politicas](docs/policies.md), [estado de integracion](docs/integration.md), [contratos para scripts de presentacion](docs/presentation-contracts.md) y [guion de demostracion](docs/demo-script.md).
+Este comando debe fallar. Si el puerto 8081 responde desde el host, el
+aislamiento de red se ha roto.
+
+## 7. Registrar un usuario `USER`
+
+Genera una contraseña de demostración en vez de reutilizar una personal:
+
+```bash
+export USERNAME="demo-user"
+export USER_PASSWORD="$(openssl rand -hex 16)"
+```
+
+```bash
+curl -i -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${USERNAME}\",\"password\":\"${USER_PASSWORD}\"}"
+```
+
+Resultado esperado: HTTP `201`:
+
+```json
+{"username":"demo-user","role":"USER"}
+```
+
+Registrar el mismo nombre otra vez devuelve `409 USERNAME_EXISTS`. Datos
+inválidos devuelven `400 INVALID_REGISTRATION`. Si reinicias el gateway, debes
+registrar nuevamente los usuarios porque viven en memoria.
+
+## 8. Login de `USER` y obtención del JWT
+
+Guarda la respuesta y extrae el token sin imprimirlo:
+
+```bash
+USER_LOGIN_RESPONSE="$(curl --fail --silent --show-error \
+  -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${USERNAME}\",\"password\":\"${USER_PASSWORD}\"}")"
+
+export USER_TOKEN="$(printf '%s' "$USER_LOGIN_RESPONSE" | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+```
+
+La respuesta contiene `token`, `tokenType`, `username`, `role` y `expiresAt`.
+No imprimas ni captures el token completo.
+
+Para inspeccionar el payload localmente:
+
+```bash
+python3 -c 'import os,json,base64; p=os.environ["USER_TOKEN"].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))'
+```
+
+Debe contener `sub`, `role`, `iat` y `exp`. Decodificar el payload no valida la
+firma; el gateway sí valida firma y expiración.
+
+## 9. Probar autorización de `USER`
+
+### Consultar productos
+
+```bash
+curl -i http://localhost:8080/api/products \
+  -H "Authorization: Bearer ${USER_TOKEN}"
+
+curl -i http://localhost:8080/api/products/P-100 \
+  -H "Authorization: Bearer ${USER_TOKEN}"
+```
+
+Ambas solicitudes deben devolver HTTP `200`.
+
+### Intentar una escritura administrativa
+
+```bash
+curl -i -X POST http://localhost:8080/api/products \
+  -H "Authorization: Bearer ${USER_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"P-USER-DENIED","name":"Denied","stock":1}'
+```
+
+Resultado esperado: HTTP `403 INSUFFICIENT_PERMISSIONS`. La restricción también
+se aplica a `PUT` y `DELETE`.
+
+## 10. Probar fallos de autenticación y seguridad
+
+### JWT ausente
+
+```bash
+curl -i http://localhost:8080/api/products
+```
+
+Resultado esperado: HTTP `401 INVALID_TOKEN`.
+
+### JWT inválido o alterado
+
+```bash
+curl -i http://localhost:8080/api/products \
+  -H 'Authorization: Bearer definitely-wrong'
+```
+
+Resultado esperado: HTTP `401 INVALID_TOKEN`.
+
+### Contraseña incorrecta
+
+```bash
+curl -i -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${USERNAME}\",\"password\":\"wrong-password\"}"
+```
+
+Resultado esperado: HTTP `401 INVALID_CREDENTIALS`.
+
+### JWT expirado
+
+Cambia temporalmente `JWT_EXPIRATION_SECONDS` a `2` en `.env` y recrea el
+gateway:
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env up -d --force-recreate gateway
+```
+
+La recreación elimina los usuarios en memoria. Registra e inicia sesión otra
+vez, guarda el nuevo `USER_TOKEN`, espera tres segundos y úsalo:
+
+```bash
+sleep 3
+curl -i http://localhost:8080/api/products \
+  -H "Authorization: Bearer ${USER_TOKEN}"
+```
+
+Debe responder `401 INVALID_TOKEN`. Después restaura
+`JWT_EXPIRATION_SECONDS=3600` y recrea nuevamente el gateway.
+
+### Ruta bloqueada
+
+Carga las variables de `.env` en la terminal:
+
+```bash
+set -a
+. ./.env
+set +a
+```
+
+```bash
+curl -i http://localhost:8080/api/admin/status \
+  -H "X-API-Key: ${MODUSHIELD_API_KEY}"
+```
+
+Aunque la ruta existe en el backend, el gateway debe devolver
+`403 ROUTE_NOT_ALLOWED`.
+
+### Orden heredada sin API key
+
+```bash
+curl -i -X POST http://localhost:8080/api/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"productId":"P-100","quantity":1}'
+```
+
+Resultado esperado: HTTP `401 INVALID_API_KEY`.
+
+## 11. Login de `ADMIN`
+
+Si todavía no cargaste `.env`:
+
+```bash
+set -a
+. ./.env
+set +a
+```
+
+Obtén el JWT administrativo:
+
+```bash
+ADMIN_LOGIN_RESPONSE="$(curl --fail --silent --show-error \
+  -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}")"
+
+export ADMIN_TOKEN="$(printf '%s' "$ADMIN_LOGIN_RESPONSE" | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+```
+
+La respuesta debe indicar `"role":"ADMIN"`.
+
+## 12. Demostrar CRUD completo de `ADMIN`
+
+### Crear
+
+```bash
+curl -i -X POST http://localhost:8080/api/products \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"P-GUIDE","name":"Guide product","stock":3}'
+```
+
+Resultado: HTTP `201` y `Location: /api/products/P-GUIDE`.
+
+### Consultar
+
+```bash
+curl -i http://localhost:8080/api/products/P-GUIDE \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}"
+```
+
+Resultado: HTTP `200`, stock `3`.
+
+### Actualizar
+
+```bash
+curl -i -X PUT http://localhost:8080/api/products/P-GUIDE \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"P-GUIDE","name":"Updated guide product","stock":9}'
+```
+
+Resultado: HTTP `200`, con nombre actualizado y stock `9`. El `id` del JSON
+debe coincidir con el de la URL.
+
+### Eliminar y confirmar
+
+```bash
+curl -i -X DELETE http://localhost:8080/api/products/P-GUIDE \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}"
+
+curl -i http://localhost:8080/api/products/P-GUIDE \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}"
+```
+
+La eliminación devuelve HTTP `204`; la consulta posterior devuelve `404`.
+
+El límite es cinco solicitudes por usuario dentro de diez segundos. Si recibes
+HTTP `429`, espera 11 segundos antes de repetir la operación.
+
+## 13. Maven, JUnit 5 y JaCoCo
+
+El `pom.xml` padre configura JaCoCo por módulo. La fase `test` compila, ejecuta
+JUnit 5, genera reportes y exige al menos 80% de cobertura de líneas de manera
+independiente para `gateway-service` y `demo-api`.
+
+Ejecuta el mismo quality gate utilizado por CI:
+
+```bash
+./mvnw --batch-mode --no-transfer-progress clean test
+```
+
+PowerShell:
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress clean test
+```
+
+El reactor debe terminar con `BUILD SUCCESS`. Un módulo debajo de `0.80` hace
+fallar Maven aunque todas sus pruebas pasen.
+
+Resultados JUnit:
+
+```text
+gateway-service/target/surefire-reports/
+demo-api/target/surefire-reports/
+```
+
+Reportes JaCoCo:
+
+```text
+gateway-service/target/site/jacoco/index.html
+gateway-service/target/site/jacoco/jacoco.csv
+gateway-service/target/site/jacoco/jacoco.xml
+demo-api/target/site/jacoco/index.html
+demo-api/target/site/jacoco/jacoco.csv
+demo-api/target/site/jacoco/jacoco.xml
+```
+
+Calcula los mismos porcentajes mostrados por CI:
+
+```bash
+awk -F, 'NR > 1 { missed += $8; covered += $9 } END { printf "gateway-service: %.2f%%\n", 100 * covered / (covered + missed) }' gateway-service/target/site/jacoco/jacoco.csv
+
+awk -F, 'NR > 1 { missed += $8; covered += $9 } END { printf "demo-api: %.2f%%\n", 100 * covered / (covered + missed) }' demo-api/target/site/jacoco/jacoco.csv
+```
+
+No uses `-DskipTests` para verificar cobertura. Si Mockito no puede inicializar
+Byte Buddy o adjuntar su agente, confirma que `JAVA_HOME` y `./mvnw -version`
+utilicen Temurin 17. `Coverage checks have not been met` es un fallo real del
+quality gate y no debe desactivarse.
+
+Las pruebas unitarias no necesitan Docker, base de datos ni servicios externos.
+
+## 14. Empaquetar la aplicación
+
+Después del quality gate:
+
+```bash
+./mvnw --batch-mode --no-transfer-progress -DskipTests -Djacoco.skip=true package
+```
+
+Esto reproduce la etapa separada de empaquetado del workflow. Los JAR esperados
+son:
+
+```text
+gateway-service/target/gateway-service-0.1.0-SNAPSHOT.jar
+demo-api/target/demo-api-0.1.0-SNAPSHOT.jar
+```
+
+## 15. Construir las imágenes Docker
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env build
+docker compose -f infra/docker-compose.yml --env-file .env images
+```
+
+Los Dockerfiles utilizan builds multietapa con Java 17, Maven Wrapper e imágenes
+de runtime que se ejecutan con usuarios sin privilegios.
+
+## 16. Ejecutar E01–E12
+
+Asegúrate de que ambos servicios estén activos:
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env up -d --build
+python3 client-tests/run_demo.py
+```
+
+El runner lee `.env`, inicia sesión como ADMIN, crea un `USER` temporal y prueba:
+
+| Escenario | Verificación | Resultado esperado |
+|---|---|---|
+| E01 | Salud del gateway | `200` |
+| E02 | Login ADMIN y productos autenticados | `200` |
+| E03 | Productos sin JWT | `401 INVALID_TOKEN` |
+| E04 | JWT inválido | `401 INVALID_TOKEN` |
+| E05 | Ruta bloqueada | `403 ROUTE_NOT_ALLOWED` |
+| E06 | Escritura de `USER` | `403 INSUFFICIENT_PERMISSIONS` |
+| E07 | Seis lecturas en una ventana | cinco `200` y luego `429 RATE_LIMIT_EXCEEDED` |
+| E08 | Payload de exactamente 8192 bytes | `201` |
+| E09 | Payload de 8193 bytes | `413 PAYLOAD_TOO_LARGE` |
+| E10 | Backend detenido | `502 UPSTREAM_UNAVAILABLE` y reinicio |
+| E11 | Aislamiento de red | 8081 inaccesible desde host y red frontal |
+| E12 | Auditoría segura | request ID presente; JWT ausente de logs |
+
+Resultado final esperado:
+
+```text
+Summary: 12 passed, 0 failed, 0 skipped
+Evidence: .../docs/evidence/e2e-<timestamp UTC>.json
+```
+
+El runner falla con código distinto de cero si un escenario no pasa. Durante
+E10 detiene y reinicia `demo-api`; en E11 crea un contenedor desechable; en E12
+inspecciona logs. No lo interrumpas.
+
+El modo parcial no disruptivo ejecuta E01–E09 y omite E10–E12:
+
+```bash
+python3 client-tests/run_demo.py --http-only
+```
+
+Este modo no demuestra que los doce escenarios pasaron.
+
+## 17. Inspeccionar evidencia y auditoría
+
+```bash
+ls -lt docs/evidence/
+python3 -m json.tool "$(ls -t docs/evidence/e2e-*.json | head -1)"
+```
+
+El JSON contiene timestamp UTC, URL, revisión Git y resultado de cada escenario,
+pero no JWT, API key ni contraseñas. Una revisión terminada en `-dirty` indica
+que había archivos sin confirmar.
+
+Revisa la auditoría:
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env logs --no-color gateway
+```
+
+Los eventos deben contener request ID y decisión, nunca el JWT o la API key
+completos. `docs/evidence/*.json` está ignorado localmente; GitHub Actions lo
+preserva como artefacto.
+
+## 18. Limpiar el entorno
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env down --volumes --remove-orphans
+docker compose -f infra/docker-compose.yml --env-file .env ps
+```
+
+El segundo comando no debe mostrar contenedores activos del proyecto.
+
+Elimina secretos de la terminal:
+
+```bash
+unset USER_PASSWORD USER_LOGIN_RESPONSE USER_TOKEN
+unset ADMIN_LOGIN_RESPONSE ADMIN_TOKEN
+unset MODUSHIELD_API_KEY JWT_SECRET ADMIN_USERNAME ADMIN_PASSWORD
+```
+
+Conserva `.env` solamente en un equipo confiable. Puede recrearse desde
+`.env.example`. Los directorios `target/` y la evidencia local están ignorados.
+
+## 19. Pipeline de GitHub Actions
+
+El workflow `.github/workflows/ci.yml`, llamado **CI and test deployment**, se
+ejecuta en cada pull request, en cada push a `main` y manualmente mediante
+`workflow_dispatch`.
+
+Utiliza un runner Ubuntu hospedado por GitHub como entorno aislado y efímero.
+Las etapas son:
+
+1. Checkout.
+2. Temurin Java 17 y caché Maven.
+3. JUnit 5 y JaCoCo ≥80% por módulo.
+4. Publicación de porcentajes en el resumen.
+5. Empaquetado Maven.
+6. Carga de reportes JaCoCo.
+7. Generación de credenciales aleatorias para esa ejecución.
+8. Construcción de imágenes Docker.
+9. Despliegue con el Compose existente.
+10. Espera de `/health` hasta 60 segundos.
+11. Ejecución obligatoria de E01–E12.
+12. Registro del despliegue exitoso.
+13. Carga de evidencia y logs de fallo.
+14. `docker compose down` incluso si una prueba posterior al despliegue falla.
+
+El job es secuencial: empaquetado, Docker, despliegue y E2E no se ejecutan si
+falla JUnit o el gate JaCoCo. El endpoint localhost solo existe durante la
+ejecución y desaparece al terminar.
+
+## 20. Ejecutar y verificar GitHub Actions
+
+### Mediante pull request
+
+1. Crea una rama y confirma solamente los cambios deseados.
+2. Sube la rama y abre un pull request.
+3. Abre **Actions -> CI and test deployment**.
+4. Selecciona la ejecución del pull request.
+5. Confirma que **Test, build, and deploy isolated environment** termine verde.
+6. Después de integrar, verifica también la ejecución generada por el push a
+   `main`.
+
+### Ejecución manual en `main`
+
+1. Abre **Actions** en GitHub.
+2. Selecciona **CI and test deployment**.
+3. Presiona **Run workflow**.
+4. Elige `main`, confirma y espera la finalización.
+
+Si el botón no aparece, comprueba que Actions esté habilitado en
+**Settings -> Actions -> General** y que el workflow con `workflow_dispatch`
+exista en la rama.
+
+### Evidencia de éxito
+
+Verifica que:
+
+- JUnit 5 y el gate JaCoCo terminaron correctamente.
+- El resumen muestra ≥80% en ambos módulos.
+- El empaquetado y las imágenes Docker se construyeron.
+- El entorno Compose inició y `/health` respondió.
+- E01–E12 reportó doce escenarios aprobados.
+- **Tear down isolated environment** se ejecutó.
+
+Descarga desde **Artifacts**:
+
+- `jacoco-reports-<run id>`: HTML, CSV y XML de ambos módulos.
+- `e2e-evidence-<run id>`: JSON E01–E12 y logs cuando corresponda.
+
+La retención depende de la configuración del repositorio u organización.
+Descarga la evidencia de evaluación antes de que expire.
+
+## Documentación adicional
+
+- [Arquitectura](docs/architecture.md)
+- [Políticas](docs/policies.md)
+- [Estado de integración](docs/integration.md)
+- [Contratos para la presentación](docs/presentation-contracts.md)
+- [Guion de demostración](docs/demo-script.md)
+- [Infraestructura](infra/README.md)
