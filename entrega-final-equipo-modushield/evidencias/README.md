@@ -39,8 +39,19 @@ Evidencia generada por `client-tests/run_demo.py` el
 
 - `e2e-local-12-de-12.json` conserva una corrida local adicional.
 
+## Evidencia OWASP ZAP
+
+Los reportes de seguridad se encuentran en `../reportes/seguridad-zap/`:
+
+- reporte inicial: una alerta baja y de confianza media por ausencia de
+  `X-Content-Type-Options` en `GET /health`;
+- reporte final: cero alertas dentro del alcance pasivo seleccionado después de
+  aplicar `X-Content-Type-Options: nosniff` globalmente.
+
+El README de esa carpeta documenta la corrección, pruebas y limitaciones. El
+alcance se limitó a `/health` y no incluyó rutas autenticadas ni escaneo activo.
+
 ## Pendiente antes del ZIP final
 
-- Capturas/exportaciones actualizadas de OWASP ZAP.
 - Confirmar que el PDF de SonarQube corresponde a la versión final.
 - PDF de cierre exportado desde Google Docs.

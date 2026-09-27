@@ -23,6 +23,8 @@ Las reglas principales son:
 - `USER` puede consultar productos mediante `GET`.
 - `ADMIN` puede crear, consultar, actualizar y eliminar productos.
 - La ruta heredada `POST /api/orders` utiliza `X-API-Key`.
+- Todas las respuestas del gateway incluyen
+  `X-Content-Type-Options: nosniff` mediante un filtro global.
 - Las contraseñas se almacenan como hashes BCrypt.
 - Los usuarios registrados y los productos viven en memoria. Reiniciar el
   contenedor correspondiente restablece esos datos.
@@ -194,7 +196,11 @@ docker compose -f infra/docker-compose.yml --env-file .env logs --no-color
 curl -i http://localhost:8080/health
 ```
 
-Resultado esperado: HTTP `200` y `"status":"UP"`.
+Resultado esperado: HTTP `200`, `"status":"UP"` y el encabezado:
+
+```http
+X-Content-Type-Options: nosniff
+```
 
 Comprueba que el backend no está expuesto:
 
@@ -713,6 +719,25 @@ Los eventos deben contener request ID y decisión, nunca el JWT o la API key
 completos. `docs/evidence/*.json` está ignorado localmente; GitHub Actions lo
 preserva como artefacto.
 
+### Consultar el análisis OWASP ZAP
+
+La evidencia versionada está en
+[`entrega-final-equipo-modushield/reportes/seguridad-zap/`](entrega-final-equipo-modushield/reportes/seguridad-zap/README.md).
+Contiene un análisis pasivo comparativo ejecutado con OWASP ZAP 2.17.0 sobre
+`GET /health`:
+
+- análisis inicial: una alerta baja y de confianza media por ausencia de
+  `X-Content-Type-Options`;
+- corrección: incorporación del filtro global `SecurityHeadersWebFilter`;
+- análisis final: cero alertas dentro de los parámetros y el alcance
+  seleccionados.
+
+Los dos PDF originales y el README técnico se incluyen como evidencia. Este
+resultado no equivale a un pentest completo: el ejercicio fue pasivo, se limitó
+a `/health` y no cubrió rutas JWT, API key, inyección, lógica de negocio ni
+disponibilidad. La ampliación del alcance y su automatización en CI permanecen
+como acciones futuras.
+
 ## 18. Limpiar el entorno
 
 ```bash
@@ -818,3 +843,4 @@ Descarga la evidencia de evaluación antes de que expire.
 - [Contratos para la presentación](docs/presentation-contracts.md)
 - [Guion de demostración](docs/demo-script.md)
 - [Infraestructura](infra/README.md)
+- [Análisis comparativo OWASP ZAP](entrega-final-equipo-modushield/reportes/seguridad-zap/README.md)

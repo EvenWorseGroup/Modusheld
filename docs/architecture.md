@@ -3,8 +3,9 @@
 ## Propósito
 
 ModuShield es un API Gateway de seguridad. Centraliza correlación, control de
-rutas y métodos, autenticación, autorización, límites, manejo de errores y
-auditoría antes de reenviar tráfico a una API interna de demostración.
+rutas y métodos, autenticación, autorización, límites, encabezados de
+seguridad, manejo de errores y auditoría antes de reenviar tráfico a una API
+interna de demostración.
 
 El reactor Maven contiene solamente dos módulos ejecutables:
 
@@ -71,6 +72,11 @@ Los `GlobalFilter` se ejecutan por orden numérico:
 | 60 | `RateLimitPolicy` | Aplica cinco solicitudes por diez segundos por identidad. |
 | posterior | Spring Cloud Gateway | Reenvía la solicitud permitida a `demo-api`. |
 
+Además de esos `GlobalFilter`, `SecurityHeadersWebFilter` es un `WebFilter`
+global con `Ordered.HIGHEST_PRECEDENCE`. Antes de confirmar cualquier respuesta
+establece `X-Content-Type-Options: nosniff`; la operación `set` sustituye un
+valor inseguro enviado por el upstream en vez de duplicarlo.
+
 El JWT no se reenvía al backend. Después de validarlo, el gateway elimina
 `Authorization` y coloca `X-Authenticated-User` y `X-Authenticated-Role`. La
 identidad del rate limit se deriva del usuario autenticado, de la API key para
@@ -117,6 +123,19 @@ serializador de rechazos del gateway y devuelve:
 
 Los eventos `AUDIT` incluyen timestamp, request ID, IP, método, ruta, decisión,
 regla, estado y duración. No incluyen el JWT, la API key completa ni el cuerpo.
+
+## Encabezado de seguridad y evidencia ZAP
+
+Un análisis pasivo inicial con OWASP ZAP 2.17.0 sobre `GET /health` detectó una
+alerta baja, confianza media, por ausencia de `X-Content-Type-Options`. Después
+de incorporar `SecurityHeadersWebFilter`, un análisis nuevo del mismo endpoint
+reportó cero alertas dentro del alcance seleccionado.
+
+La evidencia y sus limitaciones se documentan en
+[`entrega-final-equipo-modushield/reportes/seguridad-zap/`](../entrega-final-equipo-modushield/reportes/seguridad-zap/README.md).
+El resultado corresponde a un análisis pasivo de `/health`; no demuestra la
+ausencia de vulnerabilidades en las rutas autenticadas ni sustituye un escaneo
+activo o una revisión manual.
 
 ## Datos y límites operativos
 

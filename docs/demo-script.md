@@ -38,7 +38,8 @@ Confirma antes de presentar:
 - Los dos módulos superan el gate JaCoCo de 80%.
 - `gateway` publica 8080.
 - `demo-api` muestra solamente `8081/tcp`, sin binding del host.
-- `curl http://localhost:8080/health` responde 200.
+- `curl -i http://localhost:8080/health` responde 200 e incluye
+  `X-Content-Type-Options: nosniff`.
 - `localhost:8081` no responde.
 
 ## 2. Demostración manual de JWT y roles
@@ -106,7 +107,22 @@ En GitHub Actions abre **CI and test deployment** y muestra:
 6. Artefactos `jacoco-reports-<run id>` y `e2e-evidence-<run id>`.
 7. Paso de teardown ejecutado.
 
-## 5. Cierre y limpieza
+## 5. Evidencia OWASP ZAP
+
+Abre el README y los dos reportes bajo
+`entrega-final-equipo-modushield/reportes/seguridad-zap/`. Explica la secuencia:
+
+1. ZAP 2.17.0 analizó pasivamente `GET /health`.
+2. El reporte inicial mostró una alerta baja por falta de
+   `X-Content-Type-Options`.
+3. Se agregó `SecurityHeadersWebFilter` y pruebas de integración.
+4. El reporte final mostró cero alertas dentro de ese alcance.
+
+No presentes el resultado como un pentest total: no hubo escaneo activo y no
+se analizaron rutas protegidas por JWT/API key. La automatización y ampliación
+del alcance pertenecen al plan de mejora continua.
+
+## 6. Cierre y limpieza
 
 ```bash
 docker compose -f infra/docker-compose.yml --env-file .env logs --no-color gateway

@@ -64,6 +64,18 @@ verde: pruebas, JaCoCo, empaquetado, imágenes, despliegue, readiness, E01–E12
 artefactos y teardown. `../evidencias/evidencia-pipeline.png` conserva la
 captura general aportada previamente.
 
+## Verificación posterior del encabezado de seguridad
+
+Después de incorporar `SecurityHeadersWebFilter`, sus pruebas de integración y
+los reportes OWASP ZAP, el commit `7abe7c0` volvió a ejecutar el mismo workflow.
+El run [36311708560](https://github.com/EvenWorseGroup/Modusheld/actions/runs/36311708560)
+terminó en `success`: aprobó Java 17, JUnit 5, el gate JaCoCo, empaquetado,
+imágenes Docker, despliegue efímero, E01-E12, artefactos y teardown.
+
+Los archivos descargados que se conservan en esta carpeta siguen perteneciendo
+al run 36291416738; esta distinción evita atribuir un artefacto antiguo al
+commit nuevo.
+
 ## Interpretación
 
 Esta ejecución demuestra el orden exigido por la rúbrica: pruebas y cobertura,

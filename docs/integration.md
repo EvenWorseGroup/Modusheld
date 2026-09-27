@@ -7,6 +7,7 @@ El proyecto actual integra en el reactor Maven:
 - Java 17, Spring Boot 3.4.5 y Spring Cloud 2024.0.1.
 - Gateway reactivo con routing `/api/**` hacia `demo-api`.
 - Request ID, JSON uniforme de errores y manejo 500/502.
+- Encabezado global `X-Content-Type-Options: nosniff` en respuestas del gateway.
 - Registro, login, BCrypt, JWT y roles `USER`/`ADMIN`.
 - API key heredada para órdenes.
 - Allowlist de rutas y métodos.
@@ -41,6 +42,8 @@ no se empaqueta y no debe usarse como fuente del comportamiento actual.
 - `/api/admin/status` devuelve 200 dentro de la red privada, pero 403 desde el
   gateway.
 - La auditoría es un `GlobalFilter`, no un filtro servlet.
+- `SecurityHeadersWebFilter` usa `beforeCommit` y reemplaza cualquier valor
+  previo de `X-Content-Type-Options` por `nosniff`.
 - `demo-api` no publica el puerto 8081 al host.
 - Los usuarios y productos son en memoria; el objetivo es una demostración
   reproducible, no persistencia productiva.
@@ -70,6 +73,21 @@ En Windows PowerShell:
 ```
 
 Debe utilizarse JDK 17, igual que CI.
+
+## Seguridad dinámica verificada
+
+OWASP ZAP 2.17.0 se ejecutó como analizador pasivo contra `GET /health` en un
+entorno Docker local. El reporte inicial registró una alerta baja por
+`X-Content-Type-Options Header Missing`. Tras incorporar el filtro global y sus
+pruebas de integración, el reporte final no registró alertas dentro de los
+parámetros seleccionados.
+
+Los reportes inicial y final se conservan en
+[`entrega-final-equipo-modushield/reportes/seguridad-zap/`](../entrega-final-equipo-modushield/reportes/seguridad-zap/README.md).
+El alcance fue pasivo y limitado a `/health`; las rutas autenticadas y los
+ataques activos siguen fuera de esta verificación. La versión que contiene el
+filtro también aprobó el workflow completo de GitHub Actions en el run
+[36311708560](https://github.com/EvenWorseGroup/Modusheld/actions/runs/36311708560).
 
 ## Estado de Docker y E2E
 

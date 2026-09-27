@@ -128,6 +128,20 @@ stack traces. Las respuestas originadas directamente por `demo-api`, por
 ejemplo un `404` de producto, usan el formato estándar de Spring y no este
 contrato del gateway.
 
+## Encabezado global de seguridad
+
+Toda respuesta confirmada por el gateway debe incluir:
+
+```http
+X-Content-Type-Options: nosniff
+```
+
+`SecurityHeadersWebFilter` aplica el encabezado a endpoints locales y a
+respuestas reenviadas. Si el upstream intenta enviar otro valor, el gateway lo
+reemplaza. Las pruebas de integración cubren `/health` y una ruta real
+proxyficada; la evidencia OWASP ZAP documenta la alerta inicial y su eliminación
+en el análisis pasivo final de `/health`.
+
 ## Configuración segura
 
 | Variable | Propósito |

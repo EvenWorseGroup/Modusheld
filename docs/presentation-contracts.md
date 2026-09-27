@@ -16,6 +16,9 @@ prueba final; este archivo no los sustituye.
 - Ninguna credencial debe imprimirse ni guardarse en evidencia.
 - `X-Request-Id` opcional debe cumplir
   `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`; de lo contrario se reemplaza por UUID.
+- Las respuestas emitidas por el gateway incluyen
+  `X-Content-Type-Options: nosniff`, tanto en endpoints locales como en tráfico
+  proxyficado.
 
 Valores predeterminados de la matriz:
 

@@ -70,6 +70,23 @@ curl http://localhost:8080/health
 
 `http://localhost:8081` debe permanecer inaccesible.
 
+La respuesta de salud también debe incluir:
+
+```http
+X-Content-Type-Options: nosniff
+```
+
+## Uso de OWASP ZAP
+
+ZAP no forma parte de `docker-compose.yml`. La evaluación entregada se ejecutó
+desde un contenedor o aplicación ZAP separado contra
+`http://host.docker.internal:8080/health`, con el stack local ya iniciado. Los
+reportes versionados corresponden a análisis pasivos; no deben describirse como
+escaneos activos ni como cobertura completa de las rutas autenticadas.
+
+Consulta resultados, alcance y limitaciones en
+[`entrega-final-equipo-modushield/reportes/seguridad-zap/`](../entrega-final-equipo-modushield/reportes/seguridad-zap/README.md).
+
 Limpieza completa:
 
 ```bash

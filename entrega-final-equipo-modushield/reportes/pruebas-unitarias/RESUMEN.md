@@ -15,6 +15,16 @@ ejecución equivalente de la misma suite.
 
 Ambos módulos superan el mínimo obligatorio de 80% de cobertura de líneas.
 
+## Estado posterior de la suite
+
+La versión que incorporó el filtro global de encabezados añadió dos pruebas de
+integración al gateway. Esa suite actualizada (82 pruebas del gateway y 10 de
+`demo-api`) aprobó el workflow de Java 17 y el gate JaCoCo en el run
+[36311708560](https://github.com/EvenWorseGroup/Modusheld/actions/runs/36311708560).
+Los HTML, XML, CSV y ZIP conservados aquí siguen siendo los artefactos originales
+del run 36291416738; no se modifican ni se presentan como si provinieran del run
+nuevo.
+
 ## Quality gate
 
 El `pom.xml` raíz ejecuta `jacoco:prepare-agent`, `jacoco:report` y

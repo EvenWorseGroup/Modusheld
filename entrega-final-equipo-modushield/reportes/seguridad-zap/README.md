@@ -8,6 +8,9 @@
 **Objetivo evaluado:** `GET /health` del API Gateway  
 **Dirección utilizada desde ZAP:** `http://host.docker.internal:8080/health`
 
+**Implementación verificada en CI:** commit `7abe7c0`, run
+[36311708560](https://github.com/EvenWorseGroup/Modusheld/actions/runs/36311708560)
+
 ## 1. Objetivo
 
 El propósito de esta evaluación fue observar el tráfico HTTP generado por el API Gateway de ModuShield, identificar una configuración de seguridad mejorable, aplicar una corrección verificable y comparar los resultados obtenidos antes y después del cambio.
@@ -73,6 +76,10 @@ Las pruebas de integración comprueban que:
 
 La ejecución registrada completó 82 pruebas del gateway y 10 pruebas de la API de demostración, para un total de 92 pruebas sin fallos. La reconstrucción posterior del contenedor también finalizó correctamente.
 
+La versión final que contiene el filtro, las pruebas y estos reportes también
+completó exitosamente el pipeline de Java 17, JaCoCo, Docker y E01-E12 en
+GitHub Actions.
+
 ### 5.2 Comprobación directa
 
 Después de reconstruir y recrear el contenedor del gateway, se consultó el endpoint desde el host. La respuesta confirmó:
@@ -100,7 +107,7 @@ El resultado demuestra la eliminación del hallazgo concreto detectado en el an�
 
 ## 7. Evidencias
 
-- [Reporte inicial de OWASP ZAP](<./Modushield -Analisis inicial OWASP ZAP(2).pdf>)
+- [Reporte inicial de OWASP ZAP](<./Modushield -Analisis inicial OWASP ZAP.pdf>)
 - [Reporte final de OWASP ZAP](<./ModuShield - Análisis final OWASP ZAP.pdf>)
 
 El reporte inicial documenta la alerta de riesgo bajo y el reporte final declara que no se encontraron alertas dentro de los parámetros evaluados.

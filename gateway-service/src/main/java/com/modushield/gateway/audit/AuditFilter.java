@@ -36,9 +36,8 @@ public class AuditFilter implements GlobalFilter, Ordered {
 
     private void writeEvent(ServerWebExchange exchange, long startedAt) {
         long durationMs = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
-        int statusCode = exchange.getResponse().getStatusCode() == null
-                ? 200
-                : exchange.getResponse().getStatusCode().value();
+        var responseStatus = exchange.getResponse().getStatusCode();
+        int statusCode = responseStatus == null ? 200 : responseStatus.value();
 
         String requestId = exchange.getAttributeOrDefault(
                 RequestIdFilter.REQUEST_ID_ATTRIBUTE,
