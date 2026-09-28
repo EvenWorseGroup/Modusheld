@@ -8,6 +8,84 @@ errores uniformes y reenvía únicamente el tráfico permitido a una API interna
 Este README contiene el recorrido completo para instalar, configurar, ejecutar
 y verificar el proyecto desde un repositorio recién clonado.
 
+## Demostración de tres contenedores
+
+Esta demostración permite comprobar el tránsito seguro de solicitudes a través
+de tres contenedores persistentes: un cliente de pruebas, ModuShield como único
+gateway público y una API interna que representa al servidor protegido.
+
+```mermaid
+flowchart LR
+    C[client-tests] -->|front-network| G[gateway :8080]
+    G -->|back-network| A[demo-api :8081]
+```
+
+`client-tests` no pertenece a `back-network` y `demo-api` no pertenece a
+`front-network`; por ello, el cliente solamente puede llegar al servidor a
+través del gateway. Una imagen de contenedor comparte el kernel del host y
+empaqueta la aplicación con sus dependencias. Una máquina virtual, en cambio,
+ejecuta un sistema operativo invitado completo y normalmente consume más
+recursos.
+
+Para la presentación en Windows solamente se requieren Docker Desktop en
+ejecución y PowerShell. Crea la configuración local a partir de la plantilla:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Completa en `.env` las variables indicadas por `.env.example`, especialmente
+`MODUSHIELD_API_KEY`, `JWT_SECRET`, `ADMIN_USERNAME` y `ADMIN_PASSWORD`. La
+plantilla contiene únicamente valores de ejemplo: nunca subas `.env` al
+repositorio ni compartas sus valores.
+
+Desde PowerShell, inicia y prueba toda la demostración con un único comando:
+
+```powershell
+.\run-demo.cmd
+```
+
+El resultado esperado es `client-tests` en estado `Up`, y `gateway` y
+`demo-api` en estado `Up (healthy)`. Solamente el gateway publica el puerto
+`8080` en la máquina anfitriona.
+
+El ensayo automático ejecutado dentro de `client-tests` verifica:
+
+- E01: salud del gateway.
+- E02: solicitud de productos permitida.
+- E03 y E04: rechazo de JWT ausente o inválido.
+- E05: rechazo de una ruta bloqueada.
+- E06: autorización insuficiente para escritura.
+- E07: aplicación del límite de solicitudes.
+- E08 y E09: aceptación del límite de 8192 bytes y rechazo al superarlo.
+
+E10–E12 pertenecen a la validación completa ejecutada desde el host: comprueban
+la respuesta `502` cuando el upstream no está disponible, el aislamiento de
+red y la generación de un evento `AUDIT`. Las evidencias JSON de ambas
+modalidades se conservan localmente en `docs/evidence/` y están ignoradas por
+Git.
+
+Para consultar eventos recientes y detener el entorno:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\demo-logs.ps1
+.\stop-demo.cmd
+```
+
+Solución de problemas:
+
+- Si Docker no responde, inicia Docker Desktop y espera a que el motor termine
+  de arrancar.
+- Si el puerto 8080 está ocupado, detén el proceso o contenedor que lo utiliza;
+  el contrato de esta demostración conserva ese puerto.
+- Si faltan recursos, aumenta la memoria disponible para Docker Desktop y
+  vuelve a ejecutar `run-demo.cmd`.
+- Si PowerShell restringe scripts, usa los archivos `.cmd`: aplican
+  `ExecutionPolicy Bypass` solamente al proceso de la demostración y no cambian
+  permanentemente la configuración del equipo.
+
+OWASP ZAP y Sonar no forman parte del entorno operativo de esta demostración.
+
 ## 1. Arquitectura y funcionalidades
 
 ModuShield es una aplicación Maven multimódulo:

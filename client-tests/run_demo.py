@@ -455,24 +455,31 @@ class Runner:
 
 
 def git_revision(repo_dir: Path) -> str:
-    result = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    fallback = os.getenv("GIT_REVISION", "").strip() or "container-demo"
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return fallback
     if result.returncode != 0:
-        return "unknown"
+        return fallback
 
     revision = result.stdout.strip()
-    worktree = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        worktree = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return revision
     dirty = worktree.returncode == 0 and bool(worktree.stdout.strip())
     return f"{revision}-dirty" if dirty else revision
 

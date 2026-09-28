@@ -9,6 +9,12 @@ services:
       SERVER_PORT: 8081
     expose:
       - "8081"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     networks:
       - back-network
     restart: unless-stopped
@@ -29,19 +35,36 @@ services:
       RATE_LIMIT_CAPACITY: ${RATE_LIMIT_CAPACITY:-5}
       RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-10}
     depends_on:
-      - demo-api
+      demo-api:
+        condition: service_healthy
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     networks:
       - front-network
       - back-network
     restart: unless-stopped
 
   client-tests:
-    image: curlimages/curl:8.12.1
-    profiles:
-      - tools
-    entrypoint: ["curl"]
+    build:
+      context: ..
+      dockerfile: client-tests/Dockerfile
+    environment:
+      BASE_URL: http://gateway:8080
+      MODUSHIELD_API_KEY: ${MODUSHIELD_API_KEY:?Set MODUSHIELD_API_KEY in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?Set ADMIN_USERNAME in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-10}
+    depends_on:
+      gateway:
+        condition: service_healthy
+    volumes:
+      - ../docs/evidence:/app/docs/evidence
     networks:
       - front-network
 
