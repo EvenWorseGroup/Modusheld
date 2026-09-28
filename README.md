@@ -913,6 +913,13 @@ Descarga desde **Artifacts**:
 La retención depende de la configuración del repositorio u organización.
 Descarga la evidencia de evaluación antes de que expire.
 
+## Documentación de la demostración
+
+- [Guía de demostración](docs/demo/GUIA_DEMOSTRACION.md)
+- [Arquitectura de la demostración](docs/demo/ARQUITECTURA_DEMO.md)
+- [Plan de contingencia](docs/demo/PLAN_CONTINGENCIA.md)
+- [Hoja rápida de exposición](docs/demo/HOJA_RAPIDA.md)
+
 ## Documentación adicional
 
 - [Arquitectura](docs/architecture.md)
