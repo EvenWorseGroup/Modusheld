@@ -8,6 +8,43 @@ errores uniformes y reenvía únicamente el tráfico permitido a una API interna
 Este README contiene el recorrido completo para instalar, configurar, ejecutar
 y verificar el proyecto desde un repositorio recién clonado.
 
+## Responsabilidades del equipo
+
+| Integrante | Contribución |
+|---|---|
+| Jairo | Orquestación general. |
+| Humberto | JWT, pruebas con JUnit y cobertura con JaCoCo. |
+| Pablo | Políticas de acceso y pruebas con SonarQube. |
+| Marco | Núcleo del gateway. |
+| Alejandro | Límites de tamaño y frecuencia de solicitudes. |
+| Angel | API. |
+
+## Estructura de la documentación
+
+| Ubicación | Propósito |
+|---|---|
+| [README.md](README.md) de la raíz | Guía operativa completa para instalar, configurar, ejecutar y verificar el proyecto. |
+| [docs/](docs/) | Material de referencia técnica. |
+| [entrega-final-equipo-modushield/](entrega-final-equipo-modushield/) | Evidencias de la rúbrica e informes finales. |
+| [client-tests/](client-tests/) | Demostraciones ejecutables y automatización de pruebas de extremo a extremo (E2E). |
+
+## Documentación de la demostración
+
+- [Guía de demostración](docs/demo/GUIA_DEMOSTRACION.md)
+- [Arquitectura de la demostración](docs/demo/ARQUITECTURA_DEMO.md)
+- [Plan de contingencia](docs/demo/PLAN_CONTINGENCIA.md)
+- [Hoja rápida de exposición](docs/demo/HOJA_RAPIDA.md)
+
+## Documentación adicional
+
+- [Arquitectura](docs/architecture.md)
+- [Políticas](docs/policies.md)
+- [Estado de integración](docs/integration.md)
+- [Contratos para la presentación](docs/presentation-contracts.md)
+- [Guion de demostración](docs/demo-script.md)
+- [Infraestructura](infra/README.md)
+- [Análisis comparativo OWASP ZAP](entrega-final-equipo-modushield/reportes/seguridad-zap/README.md)
+
 ## Demostración de tres contenedores
 
 Esta demostración permite comprobar el tránsito seguro de solicitudes a través
@@ -912,20 +949,3 @@ Descarga desde **Artifacts**:
 
 La retención depende de la configuración del repositorio u organización.
 Descarga la evidencia de evaluación antes de que expire.
-
-## Documentación de la demostración
-
-- [Guía de demostración](docs/demo/GUIA_DEMOSTRACION.md)
-- [Arquitectura de la demostración](docs/demo/ARQUITECTURA_DEMO.md)
-- [Plan de contingencia](docs/demo/PLAN_CONTINGENCIA.md)
-- [Hoja rápida de exposición](docs/demo/HOJA_RAPIDA.md)
-
-## Documentación adicional
-
-- [Arquitectura](docs/architecture.md)
-- [Políticas](docs/policies.md)
-- [Estado de integración](docs/integration.md)
-- [Contratos para la presentación](docs/presentation-contracts.md)
-- [Guion de demostración](docs/demo-script.md)
-- [Infraestructura](infra/README.md)
-- [Análisis comparativo OWASP ZAP](entrega-final-equipo-modushield/reportes/seguridad-zap/README.md)
