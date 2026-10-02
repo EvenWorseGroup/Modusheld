@@ -1,3 +1,5 @@
+param([switch]$Segmented)
+
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -18,7 +20,9 @@ try {
         throw "Required services are not running: $($missingServices -join ', ')."
     }
 
-    & docker compose --env-file .env -f infra/docker-compose.yml exec -T client-tests /app/client-tests/e2e.sh --http-only
+    $testArgs = @("--http-only")
+    if ($Segmented) { $testArgs += "--segmented" }
+    & docker compose --env-file .env -f infra/docker-compose.yml exec -T client-tests /app/client-tests/e2e.sh @testArgs
     if ($LASTEXITCODE -ne 0) {
         throw "The HTTP demonstration suite failed."
     }

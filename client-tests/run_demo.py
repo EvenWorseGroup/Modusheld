@@ -164,7 +164,16 @@ class Runner:
             outcome,
         )
         self.results.append(result)
-        print(f"[{outcome}] {scenario_id} {name} -> {actual}")
+        if self.args.segmented:
+            print(f"\n---------- {scenario_id}: {name} ----------")
+            print("  PETICIONES")
+            print(f"    {result.command}")
+            print("  VALIDACIONES")
+            print(f"    Esperado: {expected}")
+            print(f"    Obtenido: {actual}")
+            print(f"    Resultado: [{outcome}]", flush=True)
+        else:
+            print(f"[{outcome}] {scenario_id} {name} -> {actual}")
 
     def skip(self, scenario_id: str, name: str, reason: str) -> None:
         self.results.append(ScenarioResult(
@@ -351,6 +360,8 @@ class Runner:
 
     def run_disruptive_scenarios(self) -> None:
         if self.args.http_only:
+            if self.args.segmented:
+                print("\n========== CASOS OMITIDOS (MODO HTTP) ==========", flush=True)
             self.skip("E10", "upstream unavailable", "--http-only was selected")
             self.skip("E11", "network isolation", "--http-only was selected")
             self.skip("E12", "audit event", "--http-only was selected")
@@ -498,6 +509,11 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         default=int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "10")),
     )
     parser.add_argument(
+        "--segmented",
+        action="store_true",
+        help="Show requests, expected validations and actual results separately for each case",
+    )
+    parser.add_argument(
         "--http-only",
         action="store_true",
         help="Run E01-E09 and record E10-E12 as skipped instead of using Docker",
@@ -526,6 +542,8 @@ def main(argv: Iterable[str] = ()) -> int:
     passed = sum(item.outcome == "PASS" for item in runner.results)
     failed = sum(item.outcome == "FAIL" for item in runner.results)
     skipped = sum(item.outcome == "SKIP" for item in runner.results)
+    if args.segmented:
+        print("\n========== RESUMEN DE VALIDACIONES ==========", flush=True)
     print(f"Summary: {passed} passed, {failed} failed, {skipped} skipped")
     print(f"Evidence: {evidence}")
     return 1 if failed else 0

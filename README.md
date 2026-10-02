@@ -82,6 +82,19 @@ Desde PowerShell, inicia y prueba toda la demostración con un único comando:
 .\run-demo.cmd
 ```
 
+Para mostrar la demostración por secciones, ejecuta:
+
+```powershell
+.\run-demo-segmentado.cmd
+```
+
+Esta variante realiza el mismo arranque y las mismas pruebas. Separa el
+arranque del entorno, los casos HTTP y el estado final de los servicios.
+Cada caso muestra un bloque `PETICIONES` con el método y la ruta, y otro
+`VALIDACIONES` con el resultado esperado, el obtenido y `PASS` o `FAIL`.
+Las credenciales se representan mediante marcadores, sin imprimir sus valores.
+Conserva las evidencias en `docs/evidence/` y deja los contenedores activos.
+
 El resultado esperado es `client-tests` en estado `Up`, y `gateway` y
 `demo-api` en estado `Up (healthy)`. Solamente el gateway publica el puerto
 `8080` en la máquina anfitriona.
